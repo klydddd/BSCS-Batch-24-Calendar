@@ -1,10 +1,24 @@
 import { google } from 'googleapis';
 import { CalendarEvent, CalendarTask, CalendarCreateResponse } from '../types/calendar';
 
+// Get the base URL for OAuth redirect
+function getBaseUrl(): string {
+    // Priority: NEXTAUTH_URL > VERCEL_URL > localhost
+    if (process.env.NEXTAUTH_URL) {
+        return process.env.NEXTAUTH_URL;
+    }
+    if (process.env.VERCEL_URL) {
+        return `https://${process.env.VERCEL_URL}`;
+    }
+    return 'http://localhost:3000';
+}
+
+const REDIRECT_URI = `${getBaseUrl()}/api/auth/callback`;
+
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    process.env.NEXTAUTH_URL + '/api/auth/callback'
+    REDIRECT_URI
 );
 
 export function getAuthUrl(state?: string): string {
@@ -13,6 +27,11 @@ export function getAuthUrl(state?: string): string {
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/userinfo.email',
     ];
+
+    // Debug: Log the redirect URI being used
+    console.log('OAuth Redirect URI:', REDIRECT_URI);
+    console.log('NEXTAUTH_URL:', process.env.NEXTAUTH_URL);
+    console.log('VERCEL_URL:', process.env.VERCEL_URL);
 
     return oauth2Client.generateAuthUrl({
         access_type: 'offline',
