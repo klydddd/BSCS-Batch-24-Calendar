@@ -58,24 +58,26 @@ export async function getUserEmail(accessToken: string): Promise<string> {
 export async function createCalendarEvent(
     accessToken: string,
     event: CalendarEvent,
-    calendarId: string = 'primary'
+    calendarId: string = 'primary',
+    timezone: string = 'Asia/Manila'
 ): Promise<CalendarCreateResponse> {
     try {
         oauth2Client.setCredentials({ access_token: accessToken });
 
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+        // Use explicit timezone from client, not server's timezone
         const eventResource = {
             summary: event.title,
             description: event.description,
             location: event.location,
             start: {
                 dateTime: event.startDateTime,
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                timeZone: timezone,
             },
             end: {
                 dateTime: event.endDateTime,
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                timeZone: timezone,
             },
             attendees: event.attendees?.map(email => ({ email })),
             reminders: event.reminders || {

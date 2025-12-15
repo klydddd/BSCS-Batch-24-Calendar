@@ -4,7 +4,7 @@ import { parseInputWithAI } from '../../lib/gemini';
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { input } = body;
+        const { input, timezone } = body;
 
         if (!input || typeof input !== 'string') {
             return NextResponse.json(
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const result = await parseInputWithAI(input);
+        const result = await parseInputWithAI(input, timezone);
 
         return NextResponse.json(result);
     } catch (error) {

@@ -214,7 +214,10 @@ export default function Home() {
       const response = await fetch('/api/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: input.trim() }),
+        body: JSON.stringify({
+          input: input.trim(),
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        }),
       });
       const result: AIParseResponse = await response.json();
       if (result.success && result.data && result.data.length > 0) {
@@ -252,7 +255,12 @@ export default function Home() {
       const response = await fetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken: session.accessToken, calendarItem: item, attendees: recipients }),
+        body: JSON.stringify({
+          accessToken: session.accessToken,
+          calendarItem: item,
+          attendees: recipients,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        }),
       });
       const result: CalendarCreateResponse = await response.json();
       if (result.success) {
@@ -292,7 +300,12 @@ export default function Home() {
         const response = await fetch('/api/calendar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken: session.accessToken, calendarItem: item, attendees: recipients }),
+          body: JSON.stringify({
+            accessToken: session.accessToken,
+            calendarItem: item,
+            attendees: recipients,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          }),
         });
         const result: CalendarCreateResponse = await response.json();
         if (result.success) {

@@ -81,12 +81,24 @@ Example output:
   {"type": "event", "title": "PEF3 - Main Performers Performance", "startDateTime": "2025-12-12T09:00:00", "endDateTime": "2025-12-12T10:00:00"}
 ]`;
 
-export async function parseInputWithAI(input: string): Promise<AIParseResponse> {
+export async function parseInputWithAI(input: string, timezone?: string): Promise<AIParseResponse> {
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-        const currentDate = new Date().toISOString();
-        const prompt = SYSTEM_PROMPT.replace('{{CURRENT_DATE}}', currentDate);
+        // Use client timezone or default to Asia/Manila (UTC+8)
+        const tz = timezone || 'Asia/Manila';
+        const now = new Date();
+        // Format date in the client's timezone for accurate "tomorrow" calculations
+        const currentDateFormatted = now.toLocaleString('en-US', {
+            timeZone: tz,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+        const prompt = SYSTEM_PROMPT.replace('{{CURRENT_DATE}}', `${currentDateFormatted} (Timezone: ${tz})`);
 
         const chat = model.startChat({
             history: [

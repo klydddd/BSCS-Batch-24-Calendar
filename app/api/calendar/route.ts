@@ -5,7 +5,7 @@ import { CalendarEvent, CalendarTask } from '../../types/calendar';
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { accessToken, calendarItem, calendarId, attendees } = body;
+        const { accessToken, calendarItem, calendarId, attendees, timezone } = body;
 
         if (!accessToken) {
             return NextResponse.json(
@@ -23,6 +23,9 @@ export async function POST(request: NextRequest) {
 
         let result;
 
+        // Use provided timezone or default to Asia/Manila
+        const tz = timezone || 'Asia/Manila';
+
         if (calendarItem.type === 'event') {
             // Merge attendees from the request with any existing attendees
             const eventWithAttendees: CalendarEvent = {
@@ -32,7 +35,8 @@ export async function POST(request: NextRequest) {
             result = await createCalendarEvent(
                 accessToken,
                 eventWithAttendees,
-                calendarId || 'primary'
+                calendarId || 'primary',
+                tz
             );
         } else if (calendarItem.type === 'task') {
             // Pass attendees to task creation (will be used to send invites)
