@@ -85,8 +85,8 @@ export async function parseInputWithAI(input: string, timezone?: string): Promis
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-        // Use client timezone or default to Asia/Manila (UTC+8)
-        const tz = timezone || 'Asia/Manila';
+        // Use client timezone or default to Asia/Hong_Kong (UTC+8)
+        const tz = timezone || 'Asia/Hong_Kong';
         const now = new Date();
         // Format date in the client's timezone for accurate "tomorrow" calculations
         const currentDateFormatted = now.toLocaleString('en-US', {

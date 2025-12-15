@@ -59,7 +59,7 @@ export async function createCalendarEvent(
     accessToken: string,
     event: CalendarEvent,
     calendarId: string = 'primary',
-    timezone: string = 'Asia/Manila'
+    timezone: string = 'Asia/Hong_Kong'
 ): Promise<CalendarCreateResponse> {
     try {
         oauth2Client.setCredentials({ access_token: accessToken });
@@ -264,3 +264,91 @@ export async function deleteCalendarEvent(
     }
 }
 
+export interface UpdateEventData {
+    title?: string;
+    description?: string;
+    startDateTime?: string;
+    endDateTime?: string;
+    startDate?: string; // For all-day events
+    endDate?: string;   // For all-day events
+    isAllDay?: boolean;
+}
+
+export interface UpdateEventResponse {
+    success: boolean;
+    error?: string;
+}
+
+export async function updateCalendarEvent(
+    accessToken: string,
+    eventId: string,
+    updateData: UpdateEventData,
+    calendarId: string = 'primary',
+    timezone: string = 'Asia/Hong_Kong',
+    sendNotifications: boolean = true
+): Promise<UpdateEventResponse> {
+    try {
+        oauth2Client.setCredentials({ access_token: accessToken });
+
+        const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+        // First, get the existing event
+        const existingEvent = await calendar.events.get({
+            calendarId,
+            eventId,
+        });
+
+        // Build the update payload
+        const eventResource: Record<string, unknown> = {
+            ...existingEvent.data,
+        };
+
+        if (updateData.title !== undefined) {
+            eventResource.summary = updateData.title;
+        }
+
+        if (updateData.description !== undefined) {
+            eventResource.description = updateData.description;
+        }
+
+        // Handle date/time updates
+        if (updateData.isAllDay) {
+            // Convert to all-day event
+            if (updateData.startDate) {
+                eventResource.start = { date: updateData.startDate };
+            }
+            if (updateData.endDate) {
+                eventResource.end = { date: updateData.endDate };
+            }
+        } else {
+            // Timed event
+            if (updateData.startDateTime) {
+                eventResource.start = {
+                    dateTime: updateData.startDateTime,
+                    timeZone: timezone,
+                };
+            }
+            if (updateData.endDateTime) {
+                eventResource.end = {
+                    dateTime: updateData.endDateTime,
+                    timeZone: timezone,
+                };
+            }
+        }
+
+        await calendar.events.update({
+            calendarId,
+            eventId,
+            requestBody: eventResource,
+            sendUpdates: sendNotifications ? 'all' : 'none',
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error updating calendar event:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to update event',
+        };
+    }
+}

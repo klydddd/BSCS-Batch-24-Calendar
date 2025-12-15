@@ -45,6 +45,24 @@ export default function Home() {
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
   const [eventSearchQuery, setEventSearchQuery] = useState('');
 
+  // Edit modal state
+  const [editingEvent, setEditingEvent] = useState<CalendarEventItem | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: '',
+    description: '',
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    isAllDay: false,
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Calendar view state
+  type ViewMode = 'list' | 'calendar';
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const accessToken = params.get('access_token');
@@ -145,6 +163,121 @@ export default function Home() {
       setError('Failed to delete event. Please try again.');
     } finally {
       setDeletingEventId(null);
+    }
+  };
+
+  const openEditModal = (event: CalendarEventItem) => {
+    setEditingEvent(event);
+
+    // Parse date/time from the event
+    const startDate = event.start.split('T')[0] || '';
+    const endDate = event.end.split('T')[0] || '';
+
+    let startTime = '';
+    let endTime = '';
+
+    if (!event.isAllDay && event.start.includes('T')) {
+      // Extract time from ISO string (e.g., "2025-12-15T09:00:00+08:00" -> "09:00")
+      const startMatch = event.start.match(/T(\d{2}:\d{2})/);
+      const endMatch = event.end.match(/T(\d{2}:\d{2})/);
+      startTime = startMatch ? startMatch[1] : '';
+      endTime = endMatch ? endMatch[1] : '';
+    }
+
+    setEditForm({
+      title: event.title,
+      description: event.description || '',
+      startDate,
+      startTime,
+      endDate,
+      endTime,
+      isAllDay: event.isAllDay,
+    });
+  };
+
+  const closeEditModal = () => {
+    setEditingEvent(null);
+    setEditForm({
+      title: '',
+      description: '',
+      startDate: '',
+      startTime: '',
+      endDate: '',
+      endTime: '',
+      isAllDay: false,
+    });
+  };
+
+  const handleUpdateEvent = async () => {
+    if (!session || !editingEvent) return;
+
+    setIsUpdating(true);
+    setError(null);
+
+    try {
+      const updateData: {
+        title: string;
+        description: string;
+        isAllDay: boolean;
+        startDateTime?: string;
+        endDateTime?: string;
+        startDate?: string;
+        endDate?: string;
+      } = {
+        title: editForm.title,
+        description: editForm.description,
+        isAllDay: editForm.isAllDay,
+      };
+
+      if (editForm.isAllDay) {
+        updateData.startDate = editForm.startDate;
+        updateData.endDate = editForm.endDate || editForm.startDate;
+      } else {
+        // Combine date and time into ISO format
+        updateData.startDateTime = `${editForm.startDate}T${editForm.startTime || '00:00'}:00`;
+        updateData.endDateTime = `${editForm.endDate || editForm.startDate}T${editForm.endTime || editForm.startTime || '01:00'}:00`;
+      }
+
+      const response = await fetch(`/api/calendar/events/${editingEvent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: session.accessToken,
+          updateData,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          sendNotifications: true,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Update the event in the local state
+        setCalendarEvents(calendarEvents.map(e =>
+          e.id === editingEvent.id
+            ? {
+              ...e,
+              title: editForm.title,
+              description: editForm.description,
+              start: editForm.isAllDay
+                ? editForm.startDate
+                : `${editForm.startDate}T${editForm.startTime}:00`,
+              end: editForm.isAllDay
+                ? (editForm.endDate || editForm.startDate)
+                : `${editForm.endDate || editForm.startDate}T${editForm.endTime}:00`,
+              isAllDay: editForm.isAllDay,
+            }
+            : e
+        ));
+        setSuccess(`Updated "${editForm.title}" successfully!`);
+        closeEditModal();
+      } else {
+        setError(result.error || 'Failed to update event');
+      }
+    } catch {
+      setError('Failed to update event. Please try again.');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -350,6 +483,86 @@ export default function Home() {
     try {
       return new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     } catch { return dateStr; }
+  };
+
+  // Calendar view helpers
+  const getCalendarDays = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+
+    const days: (Date | null)[] = [];
+
+    // Add empty slots for days before the first day of the month
+    const startPadding = firstDay.getDay();
+    for (let i = 0; i < startPadding; i++) {
+      days.push(null);
+    }
+
+    // Add all days of the month
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      days.push(new Date(year, month, day));
+    }
+
+    // Add empty slots to complete the last week
+    const endPadding = 6 - lastDay.getDay();
+    for (let i = 0; i < endPadding; i++) {
+      days.push(null);
+    }
+
+    return days;
+  };
+
+  const getEventsForDate = (date: Date) => {
+    // Format the calendar date as YYYY-MM-DD in local timezone (not UTC)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    return calendarEvents.filter(event => {
+      // For all-day events, the start is just a date like "2025-12-16"
+      // For timed events, the start is like "2025-12-16T21:00:00+08:00"
+      // We need to parse the event date in the correct timezone
+
+      if (event.isAllDay) {
+        // All-day events just have a date string
+        return event.start === dateStr;
+      } else {
+        // For timed events, parse the datetime and compare in local timezone
+        const eventDateTime = new Date(event.start);
+        const eventYear = eventDateTime.getFullYear();
+        const eventMonth = String(eventDateTime.getMonth() + 1).padStart(2, '0');
+        const eventDay = String(eventDateTime.getDate()).padStart(2, '0');
+        const eventDateStr = `${eventYear}-${eventMonth}-${eventDay}`;
+        return eventDateStr === dateStr;
+      }
+    });
+  };
+
+  const isToday = (date: Date) => {
+    const today = new Date();
+    return date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+  };
+
+  const prevMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  };
+
+  const nextMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+  };
+
+  const goToToday = () => {
+    setCurrentMonth(new Date());
+  };
+
+  const formatMonthYear = (date: Date) => {
+    return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
   const filteredEvents = calendarEvents.filter(event =>
@@ -593,22 +806,93 @@ PEF3
                   </button>
                 </div>
               ) : (
-                <div className="glass-panel p-5 w-full max-w-2xl mx-auto">
+                <div className="glass-panel p-5 w-full max-w-4xl mx-auto">
+                  {/* Header with search, view toggle, and refresh */}
                   <div className="mb-5">
-                    <div className="flex gap-3">
-                      <div className="flex-1 relative">
-                        <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <circle cx="11" cy="11" r="8" />
-                          <path d="M21 21l-4.35-4.35" />
-                        </svg>
-                        <input
-                          type="text"
-                          value={eventSearchQuery}
-                          onChange={(e) => setEventSearchQuery(e.target.value)}
-                          placeholder="Search events..."
-                          className="input-glass w-full pl-11"
-                        />
+                    <div className="flex flex-wrap gap-3 items-center">
+                      {/* Search - only show in list view */}
+                      {viewMode === 'list' && (
+                        <div className="flex-1 relative min-w-[200px]">
+                          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <circle cx="11" cy="11" r="8" />
+                            <path d="M21 21l-4.35-4.35" />
+                          </svg>
+                          <input
+                            type="text"
+                            value={eventSearchQuery}
+                            onChange={(e) => setEventSearchQuery(e.target.value)}
+                            placeholder="Search events..."
+                            className="input-glass w-full pl-11"
+                          />
+                        </div>
+                      )}
+
+                      {/* Calendar navigation - only show in calendar view */}
+                      {viewMode === 'calendar' && (
+                        <div className="flex-1 flex items-center gap-2">
+                          <button
+                            onClick={prevMonth}
+                            className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path d="M15 18l-6-6 6-6" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={goToToday}
+                            className="px-3 py-1.5 text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                          >
+                            Today
+                          </button>
+                          <button
+                            onClick={nextMonth}
+                            className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path d="M9 18l6-6-6-6" />
+                            </svg>
+                          </button>
+                          <span className="text-white font-semibold ml-2">
+                            {formatMonthYear(currentMonth)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* View Toggle */}
+                      <div className="flex bg-white/10 rounded-lg p-1">
+                        <button
+                          onClick={() => setViewMode('list')}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'list'
+                            ? 'bg-white/20 text-white'
+                            : 'text-white/60 hover:text-white'
+                            }`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <line x1="8" y1="6" x2="21" y2="6" />
+                            <line x1="8" y1="12" x2="21" y2="12" />
+                            <line x1="8" y1="18" x2="21" y2="18" />
+                            <line x1="3" y1="6" x2="3.01" y2="6" />
+                            <line x1="3" y1="12" x2="3.01" y2="12" />
+                            <line x1="3" y1="18" x2="3.01" y2="18" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => setViewMode('calendar')}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'calendar'
+                            ? 'bg-white/20 text-white'
+                            : 'text-white/60 hover:text-white'
+                            }`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <rect x="3" y="4" width="18" height="18" rx="2" />
+                            <line x1="3" y1="10" x2="21" y2="10" />
+                            <line x1="9" y1="4" x2="9" y2="10" />
+                            <line x1="15" y1="4" x2="15" y2="10" />
+                          </svg>
+                        </button>
                       </div>
+
+                      {/* Refresh button */}
                       <button onClick={loadCalendarEvents} disabled={isLoadingEvents} className="icon-btn-glass">
                         <svg className={`w-4 h-4 ${isLoadingEvents ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                           <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -624,64 +908,140 @@ PEF3
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
                     </div>
-                  ) : filteredEvents.length === 0 ? (
-                    <div className="text-center py-16">
-                      <svg className="w-14 h-14 mx-auto mb-4 text-white/30" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
-                        <rect x="3" y="4" width="18" height="18" rx="2" />
-                        <line x1="3" y1="10" x2="21" y2="10" />
-                      </svg>
-                      <p className="text-white/50 text-sm">{eventSearchQuery ? 'No events found.' : 'No upcoming events.'}</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-[350px] overflow-y-auto">
-                      {filteredEvents.map((event) => (
-                        <div key={event.id} className="event-card-glass">
-                          <div className="flex items-start gap-4">
-                            <div className="indicator-dot mt-2" style={{ background: event.isAllDay ? '#fbbf24' : '#3b82f6' }} />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-white text-sm">{event.title}</p>
-                              <p className="text-xs text-white/50 mt-1">
-                                {event.isAllDay ? formatDate(event.start) : formatDateTime(event.start)}
-                              </p>
-                              {event.attendees.length > 0 && (
-                                <p className="text-xs text-white/40 mt-0.5">{event.attendees.length} attendee{event.attendees.length !== 1 ? 's' : ''}</p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1">
-                              {event.link && (
-                                <a href={event.link} target="_blank" rel="noopener noreferrer" className="p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-all">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                  </svg>
-                                </a>
-                              )}
-                              <button
-                                onClick={() => handleDeleteEvent(event.id, event.title)}
-                                disabled={deletingEventId === event.id}
-                                className="p-2 text-white/40 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all disabled:opacity-50"
-                              >
-                                {deletingEventId === event.id ? (
-                                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                  </svg>
-                                ) : (
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                    <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                )}
-                              </button>
-                            </div>
-                          </div>
+                  ) : viewMode === 'list' ? (
+                    /* List View */
+                    <>
+                      {filteredEvents.length === 0 ? (
+                        <div className="text-center py-16">
+                          <svg className="w-14 h-14 mx-auto mb-4 text-white/30" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
+                            <rect x="3" y="4" width="18" height="18" rx="2" />
+                            <line x1="3" y1="10" x2="21" y2="10" />
+                          </svg>
+                          <p className="text-white/50 text-sm">{eventSearchQuery ? 'No events found.' : 'No upcoming events.'}</p>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      ) : (
+                        <div className="space-y-2 max-h-[350px] overflow-y-auto">
+                          {filteredEvents.map((event) => (
+                            <div key={event.id} className="event-card-glass">
+                              <div className="flex items-start gap-4">
+                                <div className="indicator-dot mt-2" style={{ background: event.isAllDay ? '#fbbf24' : '#3b82f6' }} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-white text-sm">{event.title}</p>
+                                  <p className="text-xs text-white/50 mt-1">
+                                    {event.isAllDay ? formatDate(event.start) : formatDateTime(event.start)}
+                                  </p>
+                                  {event.attendees.length > 0 && (
+                                    <p className="text-xs text-white/40 mt-0.5">{event.attendees.length} attendee{event.attendees.length !== 1 ? 's' : ''}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  {event.link && (
+                                    <a href={event.link} target="_blank" rel="noopener noreferrer" className="p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-lg transition-all">
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                      </svg>
+                                    </a>
+                                  )}
+                                  <button
+                                    onClick={() => openEditModal(event)}
+                                    className="p-2 text-white/40 hover:text-blue-300 hover:bg-blue-400/10 rounded-lg transition-all"
+                                    title="Edit event"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteEvent(event.id, event.title)}
+                                    disabled={deletingEventId === event.id}
+                                    className="p-2 text-white/40 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all disabled:opacity-50"
+                                    title="Delete event"
+                                  >
+                                    {deletingEventId === event.id ? (
+                                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                        <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {filteredEvents.length > 0 && (
+                        <p className="text-center text-white/40 text-xs mt-5">
+                          Showing {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    /* Calendar View */
+                    <div className="calendar-grid">
+                      {/* Day headers */}
+                      <div className="grid grid-cols-7 gap-1 mb-2">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                          <div key={day} className="text-center text-xs font-semibold text-white/50 py-2">
+                            {day}
+                          </div>
+                        ))}
+                      </div>
 
-                  {filteredEvents.length > 0 && (
-                    <p className="text-center text-white/40 text-xs mt-5">
-                      Showing {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
-                    </p>
+                      {/* Calendar grid */}
+                      <div className="grid grid-cols-7 gap-1">
+                        {getCalendarDays(currentMonth).map((date, index) => (
+                          <div
+                            key={index}
+                            className={`min-h-[80px] p-1 rounded-lg transition-all ${date
+                              ? isToday(date)
+                                ? 'bg-white/20 border border-white/40'
+                                : 'bg-white/5 hover:bg-white/10'
+                              : 'bg-transparent'
+                              }`}
+                          >
+                            {date && (
+                              <>
+                                <div className={`text-xs font-medium mb-1 ${isToday(date) ? 'text-white' : 'text-white/60'
+                                  }`}>
+                                  {date.getDate()}
+                                </div>
+                                <div className="space-y-0.5 overflow-hidden max-h-[56px]">
+                                  {getEventsForDate(date).slice(0, 3).map((event) => (
+                                    <button
+                                      key={event.id}
+                                      onClick={() => openEditModal(event)}
+                                      className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] truncate transition-all hover:opacity-80 ${event.isAllDay
+                                        ? 'bg-amber-500/30 text-amber-200'
+                                        : 'bg-blue-500/30 text-blue-200'
+                                        }`}
+                                      title={event.title}
+                                    >
+                                      {event.title}
+                                    </button>
+                                  ))}
+                                  {getEventsForDate(date).length > 3 && (
+                                    <p className="text-[10px] text-white/40 px-1">
+                                      +{getEventsForDate(date).length - 3} more
+                                    </p>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Event count */}
+                      <p className="text-center text-white/40 text-xs mt-5">
+                        {calendarEvents.length} event{calendarEvents.length !== 1 ? 's' : ''} total
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
@@ -801,6 +1161,146 @@ PEF3
           </div>
         )}
       </main>
+
+      {/* Edit Event Modal */}
+      {editingEvent && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeEditModal}
+          />
+
+          {/* Modal */}
+          <div className="relative w-full max-w-lg bg-red-800/95 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl animate-slide-up">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10">
+              <h2 className="text-lg font-bold text-white">Edit Event</h2>
+              <button
+                onClick={closeEditModal}
+                className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-5 space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Title</label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm placeholder-white/50 focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all"
+                  placeholder="Event title"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Description</label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm placeholder-white/50 focus:outline-none focus:border-white/50 focus:bg-white/20 resize-none transition-all"
+                  placeholder="Event description (optional)"
+                />
+              </div>
+
+              {/* All-day toggle */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, isAllDay: !editForm.isAllDay })}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${editForm.isAllDay ? 'bg-blue-500' : 'bg-white/20'}`}
+                >
+                  <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${editForm.isAllDay ? 'left-6' : 'left-1'}`} />
+                </button>
+                <span className="text-sm text-white/80">All-day event</span>
+              </div>
+
+              {/* Date/Time inputs */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-white/70 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={editForm.startDate}
+                    onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                    className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
+                  />
+                </div>
+                {!editForm.isAllDay && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white/70 mb-2">Start Time</label>
+                    <input
+                      type="time"
+                      value={editForm.startTime}
+                      onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
+                      className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-white/70 mb-2">End Date</label>
+                  <input
+                    type="date"
+                    value={editForm.endDate}
+                    onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                    className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
+                  />
+                </div>
+                {!editForm.isAllDay && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white/70 mb-2">End Time</label>
+                    <input
+                      type="time"
+                      value={editForm.endTime}
+                      onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
+                      className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-white/10">
+              <button
+                onClick={closeEditModal}
+                className="px-5 py-2.5 text-white/80 hover:text-white text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateEvent}
+                disabled={isUpdating || !editForm.title.trim() || !editForm.startDate}
+                className="px-6 py-2.5 bg-white text-red-700 font-bold text-sm rounded-full hover:bg-white/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isUpdating ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

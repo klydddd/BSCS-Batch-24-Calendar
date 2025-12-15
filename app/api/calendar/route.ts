@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
 
         let result;
 
-        // Use provided timezone or default to Asia/Manila
-        const tz = timezone || 'Asia/Manila';
+        // Use provided timezone or default to Asia/Hong_Kong
+        const tz = timezone || 'Asia/Hong_Kong';
 
         if (calendarItem.type === 'event') {
             // Merge attendees from the request with any existing attendees
