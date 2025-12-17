@@ -2,6 +2,7 @@
 
 import { useState, useEffect, FormEvent, KeyboardEvent } from 'react';
 import { CalendarItem, CalendarEvent, CalendarTask, AIParseResponse, CalendarCreateResponse } from './types/calendar';
+import { Analytics } from '@vercel/analytics/next';
 
 interface UserSession {
   email: string;
@@ -592,6 +593,7 @@ export default function Home() {
             >
               Manage
             </button>
+
           </div>
 
           {/* Auth - Right */}
@@ -1301,6 +1303,9 @@ PEF3
           </div>
         </div>
       )}
+      <Analytics />
     </div>
+
+
   );
 }
