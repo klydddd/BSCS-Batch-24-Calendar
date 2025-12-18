@@ -3,6 +3,7 @@
 import { useState, useEffect, FormEvent, KeyboardEvent } from 'react';
 import { CalendarItem, CalendarEvent, CalendarTask, AIParseResponse, CalendarCreateResponse } from './types/calendar';
 import { Analytics } from '@vercel/analytics/next';
+import { Snowfall } from 'react-snowfall';
 
 interface UserSession {
   email: string;
@@ -572,9 +573,13 @@ export default function Home() {
   );
 
   return (
+
     <div className="min-h-screen bg-red-700">
+
+
       {/* Transparent Header on Red */}
       <header className="fixed top-0 left-0 right-0 z-50 px-6 sm:px-12 py-5">
+
         <div className="max-w-7xl mx-auto relative flex items-center justify-between">
           {/* Logo - Left */}
           <span className="font-bold text-base tracking-tight text-white">BSCS Calendar</span>
@@ -613,6 +618,7 @@ export default function Home() {
       </header>
 
       <main>
+
         {/* Messages - Fixed at top */}
         {error && (
           <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-xl px-4 animate-shake">
@@ -631,6 +637,7 @@ export default function Home() {
         )}
 
         {success && (
+
           <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-full max-w-xl px-4 animate-fade-in">
             <div className="message-box message-box-success">
               <div className="flex items-center gap-3">
@@ -647,9 +654,14 @@ export default function Home() {
 
         {/* Hero Section with Glass Overlay */}
         <div className="hero-section">
+
           {/* Pure Red Background */}
           <div className="hero-bg"></div>
+          <Snowfall
+            // Controls the number of snowflakes that are created (default 150)
+            snowflakeCount={200}
 
+          ></Snowfall>
           {/* Massive Title - At bottom */}
           <div className="hero-title-container">
             <p className="hero-subtitle mb-4">
