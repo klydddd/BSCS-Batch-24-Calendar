@@ -50,6 +50,19 @@ body {
   background: rgba(255, 255, 255, 0.5);
 }
 
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+  /* Chrome, Safari, Opera */
+}
+
 /* Selection */
 ::selection {
   background: var(--black);
