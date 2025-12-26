@@ -1917,7 +1917,7 @@ PEF3
                       })}
                     </div>
                     {/* Swipe hint */}
-                    <p className="text-center text-[10px] text-white/40 mt-2">← Swipe below to change days →</p>
+                    <p className="text-center text-[9px] text-white/30 mt-1">← Swipe to change days →</p>
                   </div>
                 )}
 
@@ -2113,7 +2113,7 @@ PEF3
                       </div>
 
                       {/* Time Slots for Selected Day */}
-                      <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                      <div className="space-y-1 h-[550px] overflow-y-auto pr-1">
                         {TIME_SLOTS.map((time, timeIndex) => {
                           const entry = getScheduleEntry(selectedMobileDay, time);
                           const isStart = isSlotStart(selectedMobileDay, time);
@@ -2135,7 +2135,7 @@ PEF3
                                 </div>
                                 <button
                                   onClick={() => openEditScheduleModal(entry)}
-                                  className="flex-1 relative p-3 rounded-xl text-left transition-all active:scale-[0.98]"
+                                  className="flex-1 relative p-2 rounded-xl text-left transition-all active:scale-[0.98]"
                                   style={{
                                     backgroundColor: `${entry.color}40`,
                                     borderLeft: `4px solid ${entry.color}`,
@@ -2190,7 +2190,7 @@ PEF3
                                     ? 'bg-white/5 active:bg-white/20'
                                     : 'bg-white/[0.02] active:bg-white/20'
                                   }`}
-                                style={{ minHeight: '44px' }}
+                                style={{ minHeight: '36px' }}
                               />
                             </div>
                           );

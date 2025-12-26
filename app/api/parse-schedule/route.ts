@@ -39,7 +39,8 @@ IMPORTANT:
 - Convert times to 24-hour format (e.g. 1:00PM -> 13:00)
 - If "MTH" appears, create separate entries for Monday and Thursday with the SAME room info.
 - Return ONLY the JSON array.
-- Ignore header rows and total rows.`;
+- Ignore header rows and total rows.
+- If the Subject Code or Course code is not found, return the course name instead of an empty string for subjectCode.`;
 
 export async function POST(request: NextRequest) {
     try {
