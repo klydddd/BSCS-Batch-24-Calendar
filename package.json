@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@huggingface/inference": "^4.13.5",
     "@vercel/analytics": "^1.6.1",
     "googleapis": "^168.0.0",
     "html2canvas": "^1.4.1",

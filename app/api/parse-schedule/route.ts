@@ -1,52 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-interface ParsedScheduleEntry {
-    subjectCode: string;
-    day: string;
-    startTime: string;
-    endTime: string;
-    room: string;
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
-const SCHEDULE_PROMPT = `You are a schedule parser. Analyze this image of a class schedule table.
-
-The table has columns like: SUBJECT CODE, SUBJECT NAME, SCHEDULE, SECTION & ROOM #, UNITS, FACULTY ASSIGNED.
-
-Extract ONLY the following information for each class row:
-1. subjectCode: The course code (e.g., "ALC01", "CCS05", "ETHICS", "OPS01")
-2. schedule: Parse the SCHEDULE column which contains day codes and times.
-3. room: The entire text from the "SECTION & ROOM #" column (e.g., "BSCS-1A / 501", "BSCS-1B / LAB1").
-
-Day codes: M, T, W, TH, F, S
-
-For entries with multiple schedules or combined days (e.g., "MTH"), create entries for EACH day.
-
-Return a JSON array of objects with this structure:
-[
-  {
-    "subjectCode": "ALC01",
-    "day": "Monday",
-    "startTime": "08:00",
-    "endTime": "11:00",
-    "room": "BSCS-1A / 501"
-  }
-]
-
-IMPORTANT:
-- Convert times to 24-hour format (e.g. 1:00PM -> 13:00)
-- If "MTH" appears, create separate entries for Monday and Thursday with the SAME room info.
-- Return ONLY the JSON array.
-- Ignore header rows and total rows.
-- If the Subject Code or Course code is not found, return the course name instead of an empty string for subjectCode.`;
+import { parseScheduleImage, ParsedScheduleEntry } from '../../lib/huggingface';
 
 export async function POST(request: NextRequest) {
     try {
-        if (!process.env.GEMINI_API_KEY) {
+        if (!process.env.HUGGINGFACE_API_KEY) {
             return NextResponse.json(
-                { success: false, error: 'Gemini API key not configured' },
+                { success: false, error: 'Hugging Face API key not configured' },
                 { status: 500 }
             );
         }
@@ -67,46 +26,20 @@ export async function POST(request: NextRequest) {
         const base64Image = buffer.toString('base64');
         const mimeType = file.type || 'image/png';
 
-        // Use Gemini Vision model
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-        const result = await model.generateContent([
-            SCHEDULE_PROMPT,
-            {
-                inlineData: {
-                    data: base64Image,
-                    mimeType: mimeType,
-                },
-            },
-        ]);
-
-        const response = await result.response;
-        const text = response.text();
-
-        // Clean the response - remove markdown code blocks if present
-        let cleanedText = text.trim();
-        if (cleanedText.startsWith('```json')) {
-            cleanedText = cleanedText.slice(7);
-        } else if (cleanedText.startsWith('```')) {
-            cleanedText = cleanedText.slice(3);
-        }
-        if (cleanedText.endsWith('```')) {
-            cleanedText = cleanedText.slice(0, -3);
-        }
-        cleanedText = cleanedText.trim();
-
-        console.log('Gemini response:', cleanedText);
-
-        const parsed: ParsedScheduleEntry[] = JSON.parse(cleanedText);
+        // Use the centralized Hugging Face parsing function
+        const parsed: ParsedScheduleEntry[] = await parseScheduleImage(base64Image, mimeType);
 
         return NextResponse.json({
             success: true,
             data: parsed,
         });
     } catch (error) {
-        console.error('Error parsing schedule with Gemini:', error);
+        console.error('Error parsing schedule:', error);
         return NextResponse.json(
-            { success: false, error: error instanceof Error ? error.message : 'Failed to parse schedule' },
+            {
+                success: false,
+                error: error instanceof Error ? error.message : 'Failed to parse schedule'
+            },
             { status: 500 }
         );
     }
