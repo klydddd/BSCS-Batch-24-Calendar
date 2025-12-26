@@ -112,6 +112,7 @@ export default function Home() {
   const [showRoomInfo, setShowRoomInfo] = useState(true);
   const [watermarkText, setWatermarkText] = useState('BSCS CALENDAR');
   const [visibleDays, setVisibleDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
+  const [hideEmptyCells, setHideEmptyCells] = useState(false);
 
   const toggleVisibleDay = (day: string) => {
     if (visibleDays.includes(day)) {
@@ -669,21 +670,50 @@ export default function Home() {
   const getScheduleEntry = (day: string, time: string) => {
     return scheduleEntries.find(entry => {
       if (entry.day !== day) return false;
-      const entryStart = parseInt(entry.startTime.replace(':', ''));
-      const entryEnd = parseInt(entry.endTime.replace(':', ''));
-      const slotTime = parseInt(time.replace(':', ''));
-      return slotTime >= entryStart && slotTime < entryEnd;
+      // Convert to minutes for accurate comparison
+      const entryStartMins = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
+      const entryEndMins = parseInt(entry.endTime.split(':')[0]) * 60 + parseInt(entry.endTime.split(':')[1]);
+      const slotMins = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1]);
+      return slotMins >= entryStartMins && slotMins < entryEndMins;
     });
   };
 
+  // Check if any entry starts within this 30-min slot window
   const isSlotStart = (day: string, time: string) => {
-    return scheduleEntries.some(entry => entry.day === day && entry.startTime === time);
+    const slotMins = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1]);
+    const slotEndMins = slotMins + 30;
+    return scheduleEntries.some(entry => {
+      if (entry.day !== day) return false;
+      const entryStartMins = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
+      // Entry starts within this 30-min slot
+      return entryStartMins >= slotMins && entryStartMins < slotEndMins;
+    });
+  };
+
+  // Get entries that start within a given slot window (for rendering)
+  const getEntriesStartingInSlot = (day: string, time: string) => {
+    const slotMins = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1]);
+    const slotEndMins = slotMins + 30;
+    return scheduleEntries.filter(entry => {
+      if (entry.day !== day) return false;
+      const entryStartMins = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
+      return entryStartMins >= slotMins && entryStartMins < slotEndMins;
+    });
+  };
+
+  // Calculate the offset within a slot (0-100%) for entries not starting exactly on :00 or :30
+  const getSlotOffset = (entry: ScheduleEntry, slotTime: string) => {
+    const slotMins = parseInt(slotTime.split(':')[0]) * 60 + parseInt(slotTime.split(':')[1]);
+    const entryStartMins = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
+    const offsetMins = entryStartMins - slotMins;
+    return (offsetMins / 30) * 100; // Percentage of the 30-min slot
   };
 
   const getSlotSpan = (entry: ScheduleEntry) => {
     const startMinutes = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
     const endMinutes = parseInt(entry.endTime.split(':')[0]) * 60 + parseInt(entry.endTime.split(':')[1]);
-    return (endMinutes - startMinutes) / 30;
+    // Use Math.ceil to ensure classes ending at non-standard times (like :45) cover all slots
+    return Math.ceil((endMinutes - startMinutes) / 30);
   };
 
   const openScheduleModal = (day?: string, time?: string) => {
@@ -840,10 +870,10 @@ export default function Home() {
       exportContainer.style.left = '-9999px';
       exportContainer.style.top = '0';
 
-      // Set dimensions based on orientation
+      // Set dimensions based on orientation - larger for more time slots
       const isLandscape = exportOrientation === 'landscape';
-      const width = isLandscape ? 1200 : 800;
-      const height = isLandscape ? 800 : 1200;
+      const width = isLandscape ? 1400 : 900;
+      const height = isLandscape ? 900 : 1600; // Taller to fit all time slots
 
       // Theme colors
       const themeGradients: Record<string, string> = {
@@ -874,19 +904,21 @@ export default function Home() {
       const innerWidth = width - (containerPadding * 2);
       const innerHeight = height - (containerPadding * 2);
 
-      // Filter to hourly slots for cleaner export
-      const exportTimeSlots = TIME_SLOTS.filter((_, i) => i % 2 === 0);
+      // Use all time slots (30-min intervals) for accurate positioning
+      const exportTimeSlots = TIME_SLOTS;
       const numRows = exportTimeSlots.length;
 
-      // Calculate cell dimensions
+      // Calculate cell dimensions - ensure all rows fit
       const titleHeight = isLandscape ? 40 : 50;
       const footerHeight = showFooter ? 30 : 0;
       const headerRowHeight = isLandscape ? 28 : 32;
       const timeLabelWidth = showTimeLabels ? (isLandscape ? 60 : 70) : 10;
-      const gridGap = 3;
+      const gridGap = 2; // Smaller gap for more rows
 
-      const gridContentHeight = innerHeight - titleHeight - footerHeight - 40; // 40 for padding
-      const cellHeight = Math.floor((gridContentHeight - headerRowHeight - (numRows * gridGap)) / numRows);
+      // Fixed cell height to ensure all rows fit
+      const availableGridHeight = innerHeight - titleHeight - footerHeight - 40 - headerRowHeight;
+      const totalGapHeight = (numRows - 1) * gridGap;
+      const cellHeight = Math.floor((availableGridHeight - totalGapHeight) / numRows);
       const dayColumnWidth = Math.floor((innerWidth - timeLabelWidth - 40 - (visibleDays.length * gridGap)) / visibleDays.length);
 
       const borderColor = themeBorderColors[exportTheme];
@@ -920,12 +952,13 @@ export default function Home() {
         `;
       });
 
-      // Time slots and day cells
+      // Time slots and day cells - 30 minute resolution
       exportTimeSlots.forEach((time, rowIndex) => {
         const gridRow = rowIndex + 2;
         const timeLabel = formatTimeLabel(time);
+        const isFullHour = time.endsWith(':00');
 
-        // Time label
+        // Time label - only show for full hours
         gridCells += `
           <div style="
             grid-column: 1; 
@@ -938,71 +971,69 @@ export default function Home() {
             align-items: center; 
             justify-content: flex-end;
           ">
-            ${showTimeLabels ? timeLabel : ''}
+            ${showTimeLabels && isFullHour ? timeLabel : ''}
           </div>
         `;
 
         // Day cells
         visibleDays.forEach((day, dayIndex) => {
-          // Find entry that covers this time slot
-          const entry = scheduleEntries.find(e => {
+          // Check if any entry STARTS within this 30-min slot window
+          const slotStartTotal = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1]);
+          const slotEndTotal = slotStartTotal + 30;
+
+          const entryStartingHere = scheduleEntries.find(e => {
             if (e.day !== day) return false;
-            const entryStartHour = parseInt(e.startTime.split(':')[0]);
-            const entryStartMin = parseInt(e.startTime.split(':')[1]);
-            const entryEndHour = parseInt(e.endTime.split(':')[0]);
-            const entryEndMin = parseInt(e.endTime.split(':')[1]);
-            const slotHour = parseInt(time.split(':')[0]);
-
-            const entryStartTotal = entryStartHour * 60 + entryStartMin;
-            const entryEndTotal = entryEndHour * 60 + entryEndMin;
-            const slotStartTotal = slotHour * 60;
-            const slotEndTotal = slotHour * 60 + 60; // Next hour
-
-            // Entry overlaps with this hour slot
-            return entryStartTotal < slotEndTotal && entryEndTotal > slotStartTotal;
+            const entryStartMins = parseInt(e.startTime.split(':')[0]) * 60 + parseInt(e.startTime.split(':')[1]);
+            return entryStartMins >= slotStartTotal && entryStartMins < slotEndTotal;
           });
 
-          // Check if this is the first slot where the entry should be rendered
-          const isStart = entry ? (() => {
-            const entryStartHour = parseInt(entry.startTime.split(':')[0]);
-            const slotHour = parseInt(time.split(':')[0]);
-            return entryStartHour === slotHour;
-          })() : false;
+          // Check if there's an entry covering this slot (but started earlier)
+          const coveringEntry = !entryStartingHere ? scheduleEntries.find(e => {
+            if (e.day !== day) return false;
+            const entryStartMins = parseInt(e.startTime.split(':')[0]) * 60 + parseInt(e.startTime.split(':')[1]);
+            const entryEndMins = parseInt(e.endTime.split(':')[0]) * 60 + parseInt(e.endTime.split(':')[1]);
+            return slotStartTotal >= entryStartMins && slotStartTotal < entryEndMins;
+          }) : null;
 
-          if (entry && isStart) {
+          if (entryStartingHere) {
+            const entry = entryStartingHere;
             const startMinutes = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
             const endMinutes = parseInt(entry.endTime.split(':')[0]) * 60 + parseInt(entry.endTime.split(':')[1]);
-            const spanHours = Math.ceil((endMinutes - startMinutes) / 60);
+            // Span is in 30-minute units
+            const spanSlots = Math.ceil((endMinutes - startMinutes) / 30);
 
             gridCells += `
               <div style="
                 grid-column: ${dayIndex + 2};
-                grid-row: ${gridRow} / span ${spanHours};
+                grid-row: ${gridRow} / span ${spanSlots};
                 background: ${entry.color}50;
                 border-left: 4px solid ${entry.color};
                 border-radius: 6px;
-                padding: 8px 10px;
+                padding: 6px 8px;
                 overflow: hidden;
                 display: flex;
                 flex-direction: column;
               ">
-                <div style="font-size: ${isLandscape ? '12px' : '14px'}; font-weight: 700; color: white; word-wrap: break-word; line-height: 1.3;">
+                <div style="font-size: ${isLandscape ? '11px' : '13px'}; font-weight: 700; color: white; word-wrap: break-word; line-height: 1.3;">
                   ${entry.subject}
                 </div>
-                ${(showRoomInfo && entry.room) ? `<div style="font-size: ${isLandscape ? '10px' : '11px'}; color: rgba(255,255,255,0.8); margin-top: 4px;">${entry.room}</div>` : ''}
-                <div style="font-size: ${isLandscape ? '9px' : '10px'}; color: rgba(255,255,255,0.7); margin-top: auto; padding-top: 4px;">
+                ${(showRoomInfo && entry.room) ? `<div style="font-size: ${isLandscape ? '9px' : '10px'}; color: rgba(255,255,255,0.8); margin-top: 3px;">${entry.room}</div>` : ''}
+                <div style="font-size: ${isLandscape ? '8px' : '9px'}; color: rgba(255,255,255,0.7); margin-top: auto; padding-top: 3px;">
                   ${formatTimeLabel(entry.startTime)} - ${formatTimeLabel(entry.endTime)}
                 </div>
               </div>
             `;
-          } else if (!entry) {
+          } else if (coveringEntry) {
+            // This slot is covered by an entry that started earlier - skip rendering
+          } else if (!hideEmptyCells) {
+            // Empty cell - minimal styling for 30-min slots (only if not hiding empty)
             gridCells += `
               <div style="
                 grid-column: ${dayIndex + 2};
                 grid-row: ${gridRow};
-                background: rgba(0,0,0,0.15);
-                border-radius: 4px;
-                border: 1px solid ${borderColor};
+                background: rgba(0,0,0,0.1);
+                border-radius: 2px;
+                ${isFullHour ? `border-top: 1px solid ${borderColor};` : ''}
               "></div>
             `;
           }
@@ -1055,10 +1086,11 @@ export default function Home() {
             flex: 1;
             display: grid;
             grid-template-columns: ${timeLabelWidth}px repeat(${visibleDays.length}, 1fr);
-            grid-template-rows: ${headerRowHeight}px repeat(${numRows}, minmax(${cellHeight}px, 1fr));
+            grid-template-rows: ${headerRowHeight}px repeat(${numRows}, ${cellHeight}px);
             gap: ${gridGap}px;
             position: relative;
             z-index: 1;
+            overflow: hidden;
           ">
             ${gridCells}
           </div>
@@ -1260,11 +1292,31 @@ export default function Home() {
       // Convert to ScheduleEntry format
       const colorPalette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
       const newEntries: ScheduleEntry[] = [];
+
+      // Map to track colors assigned to each subject
+      const subjectColorMap = new Map<string, string>();
       let colorIndex = 0;
+
+      // First, check existing entries for already assigned colors
+      for (const existingEntry of scheduleEntries) {
+        if (!subjectColorMap.has(existingEntry.subject)) {
+          subjectColorMap.set(existingEntry.subject, existingEntry.color);
+        }
+      }
 
       for (const entry of parsedEntries) {
         // Handle potentially combined days (e.g., "Monday, Thursday")
         const entryDays = entry.day.split(/,|&| and /).map(d => d.trim());
+        const subjectName = entry.subjectCode || `Class ${colorIndex + 1}`;
+
+        // Get or assign color for this subject
+        let subjectColor = subjectColorMap.get(subjectName);
+        if (!subjectColor) {
+          // Assign new color for this subject
+          subjectColor = colorPalette[colorIndex % colorPalette.length];
+          subjectColorMap.set(subjectName, subjectColor);
+          colorIndex++;
+        }
 
         for (const dayname of entryDays) {
           // Normalize day name
@@ -1291,14 +1343,13 @@ export default function Home() {
           if (!exists && entry.startTime && entry.endTime && normalizedDay) {
             newEntries.push({
               id: `gemini-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              subject: entry.subjectCode || `Class ${colorIndex + 1}`,
+              subject: subjectName,
               day: normalizedDay,
               startTime: entry.startTime,
               endTime: entry.endTime,
-              color: colorPalette[colorIndex % colorPalette.length],
+              color: subjectColor,
               room: entry.room || '',
             });
-            colorIndex++;
           }
         }
       }
@@ -1347,43 +1398,51 @@ export default function Home() {
       {/* Transparent Header on Red */}
       <header className="fixed top-0 left-0 right-0 z-50 px-6 sm:px-12 py-5">
 
-        <div className="max-w-7xl mx-auto relative flex items-center justify-between">
-          {/* Logo - Left */}
-          <span className="font-bold text-base tracking-tight text-white">BSCS Calendar</span>
+        <div className="max-w-7xl mx-auto flex items-center justify-between sm:relative">
+          {/* Logo - Left (hidden on mobile) */}
+          <span className="font-bold text-base tracking-tight text-white hidden sm:block sm:flex-shrink-0">BSCS Calendar</span>
 
-          {/* Tab Navigation - Absolute Center */}
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-8">
+          {/* Tab Navigation - Centered on desktop, flex on mobile */}
+          <div className="flex items-center gap-2 sm:gap-8 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
             <button
               onClick={() => setActiveTab('create')}
-              className={`tab-link-hero ${activeTab === 'create' ? 'tab-link-hero-active' : ''}`}
+              className={`tab-link-hero text-[10px] sm:text-sm whitespace-nowrap ${activeTab === 'create' ? 'tab-link-hero-active' : ''}`}
             >
               Create
             </button>
             <button
               onClick={() => setActiveTab('manage')}
-              className={`tab-link-hero ${activeTab === 'manage' ? 'tab-link-hero-active' : ''}`}
+              className={`tab-link-hero text-[10px] sm:text-sm whitespace-nowrap ${activeTab === 'manage' ? 'tab-link-hero-active' : ''}`}
             >
               Manage
             </button>
             <button
               onClick={() => setActiveTab('schedule')}
-              className={`tab-link-hero ${activeTab === 'schedule' ? 'tab-link-hero-active' : ''}`}
+              className={`tab-link-hero text-[10px] sm:text-sm whitespace-nowrap ${activeTab === 'schedule' ? 'tab-link-hero-active' : ''}`}
             >
-              My Schedule
+              Schedule
             </button>
-
           </div>
 
           {/* Auth - Right */}
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2 sm:gap-6 flex-shrink-0">
             {session ? (
               <>
                 <span className="text-sm text-white/60 hidden sm:block">{session.email}</span>
-                <button onClick={handleDisconnect} className="text-white/80 hover:text-white text-sm font-medium transition-colors">Sign Out</button>
+                <button
+                  onClick={handleDisconnect}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-sm font-semibold rounded-full transition-all border border-white/20"
+                >
+                  Sign Out
+                </button>
               </>
             ) : (
-              <button onClick={handleConnectGoogle} disabled={isConnecting} className="text-white/80 hover:text-white text-sm font-medium transition-colors">
-                {isConnecting ? 'Connecting...' : 'Sign In'}
+              <button
+                onClick={handleConnectGoogle}
+                disabled={isConnecting}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-sm font-semibold rounded-full transition-all border border-white/20 disabled:opacity-50"
+              >
+                {isConnecting ? '...' : 'Sign In'}
               </button>
             )}
           </div>
@@ -1837,8 +1896,11 @@ PEF3
 
           {/* Schedule Tab Glass Container */}
           {activeTab === 'schedule' && (
-            <div className="glass-container animate-slide-up" style={{ maxWidth: isMobileView ? '100%' : '1400px' }}>
-              <div className="glass-panel p-3 sm:p-5 w-full mx-auto">
+            <div
+              className={`animate-slide-up ${isMobileView ? 'fixed inset-0 top-14 z-40 bg-red-900/95' : 'glass-container'}`}
+              style={{ maxWidth: isMobileView ? '100%' : '1400px' }}
+            >
+              <div className={`w-full mx-auto ${isMobileView ? 'h-full p-4 pt-2 overflow-hidden flex flex-col' : 'glass-panel p-3 sm:p-5'}`}>
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div className="flex items-center gap-3">
@@ -1849,9 +1911,9 @@ PEF3
                       <line x1="15" y1="4" x2="15" y2="10" />
                     </svg>
                     <div>
-                      <h3 className="font-semibold text-white text-sm">My Class Schedule</h3>
+                      <h3 className="font-semibold text-white text-sm py-2">My Class Schedule</h3>
                       {/* <p className="text-xs text-white/50 mt-0.5 hidden sm:block">Click on a time slot to add a class</p> */}
-                      <p className="text-xs text-white/50 mt-0.5 sm:hidden">Tap & hold to select time range</p>
+                      {/* <p className="text-xs text-white/50 mt-0.5 sm:hidden">Tap & hold to select time range</p> */}
                     </div>
                   </div>
                   <div className="flex gap-2 w-full sm:w-auto">
@@ -1877,6 +1939,23 @@ PEF3
                         </svg>
                         <span className="hidden sm:inline">Save as PNG</span>
                         <span className="sm:hidden">PNG</span>
+                      </button>
+                    )}
+                    {scheduleEntries.length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to clear all ${scheduleEntries.length} classes from your schedule?`)) {
+                            setScheduleEntries([]);
+                            localStorage.removeItem('classSchedule');
+                          }
+                        }}
+                        className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-semibold rounded-full transition-all border border-red-500/30"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        <span className="hidden sm:inline">Clear</span>
+                        <span className="sm:hidden">Clear</span>
                       </button>
                     )}
                     <button
@@ -1917,7 +1996,7 @@ PEF3
                       })}
                     </div>
                     {/* Swipe hint */}
-                    <p className="text-center text-[9px] text-white/30 mt-1">← Swipe to change days →</p>
+                    {/* <p className="text-center text-[9px] text-white/30 mt-1">← Swipe to change days →</p> */}
                   </div>
                 )}
 
@@ -2063,7 +2142,7 @@ PEF3
                   {/* Mobile View - Single Day */}
                   {isMobileView && (
                     <div
-                      className="touch-pan-y"
+                      className="touch-pan-y flex flex-col h-full"
                       onTouchStart={(e) => {
                         const touch = e.touches[0];
                         (e.currentTarget as HTMLElement).dataset.touchStartX = touch.clientX.toString();
@@ -2097,7 +2176,7 @@ PEF3
                             <path d="M15 18l-6-6 6-6" />
                           </svg>
                         </button>
-                        <h4 className="text-white font-semibold">{selectedMobileDay}</h4>
+                        <h4 className="text-white font-semibold ">{selectedMobileDay}</h4>
                         <button
                           onClick={() => {
                             const currentIndex = DAYS.indexOf(selectedMobileDay);
@@ -2113,7 +2192,7 @@ PEF3
                       </div>
 
                       {/* Time Slots for Selected Day */}
-                      <div className="space-y-1 h-[550px] overflow-y-auto pr-1">
+                      <div className="flex-1 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: 'calc(100vh - 250px)' }}>
                         {TIME_SLOTS.map((time, timeIndex) => {
                           const entry = getScheduleEntry(selectedMobileDay, time);
                           const isStart = isSlotStart(selectedMobileDay, time);
@@ -2547,31 +2626,29 @@ PEF3
                 </select>
               </div>
 
-              {/* Time Selection */}
+              {/* Time Selection - Native time inputs for flexibility */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-white/70 mb-2">Start Time</label>
-                  <select
+                  <input
+                    type="time"
                     value={scheduleForm.startTime}
                     onChange={(e) => setScheduleForm({ ...scheduleForm, startTime: e.target.value })}
+                    min="07:00"
+                    max="19:00"
                     className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
-                  >
-                    {TIME_SLOTS.map(time => (
-                      <option key={time} value={time} className="bg-red-800 text-white">{formatTimeLabel(time)}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-white/70 mb-2">End Time</label>
-                  <select
+                  <input
+                    type="time"
                     value={scheduleForm.endTime}
                     onChange={(e) => setScheduleForm({ ...scheduleForm, endTime: e.target.value })}
+                    min={scheduleForm.startTime}
+                    max="20:00"
                     className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
-                  >
-                    {TIME_SLOTS.filter(time => time > scheduleForm.startTime).map(time => (
-                      <option key={time} value={time} className="bg-red-800 text-white">{formatTimeLabel(time)}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
 
@@ -2732,27 +2809,34 @@ PEF3
                 </div>
 
                 {/* Toggle Options */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-4 gap-2">
                   <button
                     onClick={() => setShowTimeLabels(!showTimeLabels)}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${showTimeLabels ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
+                    className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${showTimeLabels ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
                       }`}
                   >
-                    Time Labels
+                    Time
                   </button>
                   <button
                     onClick={() => setShowRoomInfo(!showRoomInfo)}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${showRoomInfo ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
+                    className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${showRoomInfo ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
                       }`}
                   >
-                    Room Info
+                    Room
                   </button>
                   <button
                     onClick={() => setShowFooter(!showFooter)}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${showFooter ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
+                    className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${showFooter ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
                       }`}
                   >
                     Footer
+                  </button>
+                  <button
+                    onClick={() => setHideEmptyCells(!hideEmptyCells)}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${hideEmptyCells ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
+                      }`}
+                  >
+                    Hide Empty
                   </button>
                 </div>
 
@@ -2912,7 +2996,9 @@ PEF3
                               );
                             }
 
-                            // Empty cell (optional background)
+                            // Empty cell (optional background) - hide if setting enabled
+                            if (hideEmptyCells) return null;
+
                             return (
                               <div
                                 key={`${day}-${time}`}
