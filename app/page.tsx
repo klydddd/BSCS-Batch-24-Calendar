@@ -1440,7 +1440,7 @@ export default function Home() {
               <button
                 onClick={handleConnectGoogle}
                 disabled={isConnecting}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-sm font-semibold rounded-full transition-all border border-white/20 disabled:opacity-50"
+                className={`${isMobileView ? 'h-[36px] w-[80px]' : 'h-[36px] w-[100px]'}  px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20 disabled:opacity-50`}
               >
                 {isConnecting ? '...' : 'Sign In'}
               </button>
@@ -1898,9 +1898,9 @@ PEF3
           {activeTab === 'schedule' && (
             <div
               className={`animate-slide-up ${isMobileView ? 'fixed inset-0 top-14 z-40 bg-red-900/95' : 'glass-container'}`}
-              style={{ maxWidth: isMobileView ? '100%' : '1400px' }}
+              style={{ maxWidth: isMobileView ? '100%' : '1400px', paddingTop: isMobileView ? '10px' : '80px' }}
             >
-              <div className={`w-full mx-auto ${isMobileView ? 'h-full p-4 pt-2 overflow-hidden flex flex-col' : 'glass-panel p-3 sm:p-5'}`}>
+              <div className={`w-full mx-auto ${isMobileView ? 'h-full p-4 pt-2 overflow-hidden flex flex-col' : 'glass-panel p-3 sm:p-5 '}`}>
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div className="flex items-center gap-3">
@@ -1916,29 +1916,29 @@ PEF3
                       {/* <p className="text-xs text-white/50 mt-0.5 sm:hidden">Tap & hold to select time range</p> */}
                     </div>
                   </div>
-                  <div className="flex gap-2 w-full sm:w-auto">
+                  <div className="flex flex-wrap sm:flex-nowrap gap-2 w-full sm:w-auto">
                     {/* Import from Image button */}
                     <button
                       onClick={() => setShowOCRModal(true)}
-                      className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-full transition-all border border-white/20"
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         <path d="M12 11V8m0 0l-2 2m2-2l2 2" />
                       </svg>
                       <span className="hidden sm:inline">Import from Image</span>
-                      <span className="sm:hidden">Import</span>
+                      <span className="sm:hidden truncate">Import</span>
                     </button>
                     {scheduleEntries.length > 0 && (
                       <button
                         onClick={() => setShowExportModal(true)}
-                        className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-full transition-all border border-white/20"
+                        className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                           <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                         <span className="hidden sm:inline">Save as PNG</span>
-                        <span className="sm:hidden">PNG</span>
+                        <span className="sm:hidden truncate">Save</span>
                       </button>
                     )}
                     {scheduleEntries.length > 0 && (
@@ -1949,23 +1949,24 @@ PEF3
                             localStorage.removeItem('classSchedule');
                           }
                         }}
-                        className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-semibold rounded-full transition-all border border-red-500/30"
+                        className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-red-500/30"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                           <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                         </svg>
                         <span className="hidden sm:inline">Clear</span>
-                        <span className="sm:hidden">Clear</span>
+                        <span className="sm:hidden truncate">Clear</span>
                       </button>
                     )}
                     <button
                       onClick={() => openScheduleModal()}
-                      className="btn-glass flex-1 sm:flex-initial flex items-center justify-center gap-2"
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2.5 bg-red-500/50 hover:bg-red-500/60 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path d="M12 4v16m8-8H4" />
                       </svg>
-                      Add Class
+                      <span className="hidden sm:inline">Add Class</span>
+                      <span className="sm:hidden truncate">Add</span>
                     </button>
                   </div>
                 </div>
@@ -2720,7 +2721,7 @@ PEF3
                 <button
                   onClick={handleSaveScheduleEntry}
                   disabled={!scheduleForm.subject.trim()}
-                  className="px-6 py-2.5 bg-white text-red-700 font-bold text-sm rounded-full hover:bg-white/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2.5 bg-red-500/50 hover:bg-red-500/60 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editingScheduleEntry ? 'Save Changes' : 'Add Class'}
                 </button>
