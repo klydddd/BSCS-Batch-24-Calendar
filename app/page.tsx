@@ -1431,7 +1431,7 @@ export default function Home() {
                 <span className="text-sm text-white/60 hidden sm:block">{session.email}</span>
                 <button
                   onClick={handleDisconnect}
-                  className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-sm font-semibold rounded-full transition-all border border-white/20"
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xsgt font-semibold rounded-full transition-all border border-white/20"
                 >
                   Sign Out
                 </button>
