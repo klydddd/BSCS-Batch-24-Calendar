@@ -2114,12 +2114,27 @@ PEF3
                                 return (
                                   <div
                                     key={`${day}-${time}`}
+                                    data-day={day}
+                                    data-time-index={timeIndex}
                                     onMouseDown={(e) => {
                                       e.preventDefault();
                                       handleDragStart(day, timeIndex);
                                     }}
                                     onMouseEnter={() => handleDragMove(day, timeIndex)}
-                                    className={`p-1 rounded transition-all cursor-pointer ${isSelected
+                                    onTouchStart={(e) => {
+                                      e.preventDefault();
+                                      handleDragStart(day, timeIndex);
+                                    }}
+                                    onTouchMove={(e) => {
+                                      const touch = e.touches[0];
+                                      const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                                      const targetDay = element?.getAttribute('data-day');
+                                      const targetTimeIndex = element?.getAttribute('data-time-index');
+                                      if (targetDay && targetTimeIndex) {
+                                        handleDragMove(targetDay, parseInt(targetTimeIndex));
+                                      }
+                                    }}
+                                    className={`p-1 rounded transition-all cursor-pointer touch-none ${isSelected
                                       ? 'bg-blue-500/40 border border-blue-400/60'
                                       : time.endsWith(':00')
                                         ? 'bg-white/5 hover:bg-white/20'
@@ -2238,7 +2253,7 @@ PEF3
                             );
                           }
 
-                          // Empty slot - Mobile optimized
+                          // Empty slot - Tap to add class
                           return (
                             <div
                               key={time}
@@ -2247,30 +2262,34 @@ PEF3
                               <div className="w-14 text-[10px] text-white/60 text-right pt-2 flex-shrink-0">
                                 {time.endsWith(':00') ? formatTimeLabel(time) : ''}
                               </div>
-                              <div
-                                onTouchStart={(e) => {
-                                  e.preventDefault();
-                                  handleDragStart(selectedMobileDay, timeIndex);
+                              <button
+                                onClick={() => {
+                                  // Pre-fill with 1-hour duration
+                                  const startHour = parseInt(time.split(':')[0]);
+                                  const startMin = time.split(':')[1];
+                                  const endHour = Math.min(startHour + 1, 19);
+                                  const endTime = `${endHour.toString().padStart(2, '0')}:${startMin}`;
+                                  setScheduleForm({
+                                    subject: '',
+                                    room: '',
+                                    day: selectedMobileDay,
+                                    startTime: time,
+                                    endTime: endTime,
+                                    color: '#3b82f6'
+                                  });
+                                  setEditingScheduleEntry(null);
+                                  setShowScheduleModal(true);
                                 }}
-                                onTouchMove={(e) => {
-                                  // Get the element under the touch point
-                                  const touch = e.touches[0];
-                                  const element = document.elementFromPoint(touch.clientX, touch.clientY);
-                                  const timeIndexAttr = element?.getAttribute('data-time-index');
-                                  if (timeIndexAttr) {
-                                    handleDragMove(selectedMobileDay, parseInt(timeIndexAttr));
-                                  }
-                                }}
-                                onClick={() => openScheduleModal(selectedMobileDay, time)}
-                                data-time-index={timeIndex}
-                                className={`flex-1 p-3 rounded-xl transition-all ${isSelected
-                                  ? 'bg-blue-500/40 border-2 border-blue-400/60'
-                                  : time.endsWith(':00')
-                                    ? 'bg-white/5 active:bg-white/20'
-                                    : 'bg-white/[0.02] active:bg-white/20'
+                                className={`flex-1 p-3 rounded-xl transition-all text-left ${time.endsWith(':00')
+                                  ? 'bg-white/5 active:bg-white/20 active:scale-[0.98]'
+                                  : 'bg-white/[0.02] active:bg-white/20 active:scale-[0.98]'
                                   }`}
                                 style={{ minHeight: '36px' }}
-                              />
+                              >
+                                {time.endsWith(':00')
+                                  // <span className="text-[9px] text-white/20">+ Tap to add</span>
+                                }
+                              </button>
                             </div>
                           );
                         })}
@@ -2627,7 +2646,7 @@ PEF3
               </div>
 
               {/* Time Selection - Native time inputs for flexibility */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-white/70 mb-2">Start Time</label>
                   <input
@@ -2636,7 +2655,8 @@ PEF3
                     onChange={(e) => setScheduleForm({ ...scheduleForm, startTime: e.target.value })}
                     min="07:00"
                     max="19:00"
-                    className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
+                    className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark] appearance-none"
+                    style={{ minHeight: '48px' }}
                   />
                 </div>
                 <div>
@@ -2647,7 +2667,8 @@ PEF3
                     onChange={(e) => setScheduleForm({ ...scheduleForm, endTime: e.target.value })}
                     min={scheduleForm.startTime}
                     max="20:00"
-                    className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark]"
+                    className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all [color-scheme:dark] appearance-none"
+                    style={{ minHeight: '48px' }}
                   />
                 </div>
               </div>
