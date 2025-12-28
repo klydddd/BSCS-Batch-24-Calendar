@@ -113,6 +113,7 @@ export default function Home() {
   const [watermarkText, setWatermarkText] = useState('BSCS CALENDAR');
   const [visibleDays, setVisibleDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
   const [hideEmptyCells, setHideEmptyCells] = useState(false);
+  const [autoFitTime, setAutoFitTime] = useState(false); // Hide excess time rows outside schedule range
 
   const toggleVisibleDay = (day: string) => {
     if (visibleDays.includes(day)) {
@@ -667,6 +668,37 @@ export default function Home() {
     return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
   };
 
+  // Get filtered time slots based on actual schedule entries (for auto-fit time feature)
+  const getFilteredTimeSlots = (entries: ScheduleEntry[], allSlots: string[]): string[] => {
+    if (entries.length === 0) return allSlots;
+
+    // Find earliest start and latest end times from all entries
+    let earliestMinutes = Infinity;
+    let latestMinutes = 0;
+
+    entries.forEach(entry => {
+      const startParts = entry.startTime.split(':').map(Number);
+      const endParts = entry.endTime.split(':').map(Number);
+      const startMins = startParts[0] * 60 + startParts[1];
+      const endMins = endParts[0] * 60 + endParts[1];
+
+      if (startMins < earliestMinutes) earliestMinutes = startMins;
+      if (endMins > latestMinutes) latestMinutes = endMins;
+    });
+
+    // Round down earliest to previous hour, round up latest to next hour
+    const earliestHour = Math.floor(earliestMinutes / 60);
+    const latestHour = Math.ceil(latestMinutes / 60);
+
+    // Filter time slots to only include those within the range
+    return allSlots.filter(slot => {
+      const slotMinutes = parseInt(slot.split(':')[0]) * 60 + parseInt(slot.split(':')[1]);
+      const slotHour = parseInt(slot.split(':')[0]);
+      // Include slots from earliestHour to latestHour (exclusive end)
+      return slotHour >= earliestHour && slotMinutes < latestHour * 60;
+    });
+  };
+
   const getScheduleEntry = (day: string, time: string) => {
     return scheduleEntries.find(entry => {
       if (entry.day !== day) return false;
@@ -905,7 +937,8 @@ export default function Home() {
       const innerHeight = height - (containerPadding * 2);
 
       // Use all time slots (30-min intervals) for accurate positioning
-      const exportTimeSlots = TIME_SLOTS;
+      // When autoFitTime is enabled, filter to only show time range that contains classes
+      const exportTimeSlots = autoFitTime ? getFilteredTimeSlots(scheduleEntries, TIME_SLOTS) : TIME_SLOTS;
       const numRows = exportTimeSlots.length;
 
       // Calculate cell dimensions - ensure all rows fit
@@ -2831,7 +2864,7 @@ PEF3
                 </div>
 
                 {/* Toggle Options */}
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-2">
                   <button
                     onClick={() => setShowTimeLabels(!showTimeLabels)}
                     className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${showTimeLabels ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
@@ -2858,7 +2891,15 @@ PEF3
                     className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${hideEmptyCells ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
                       }`}
                   >
-                    Hide Empty
+                    No Empty
+                  </button>
+                  <button
+                    onClick={() => setAutoFitTime(!autoFitTime)}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium transition-all ${autoFitTime ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50'
+                      }`}
+                    title="Hide time rows outside your schedule range"
+                  >
+                    Fit Time
                   </button>
                 </div>
 
@@ -2934,113 +2975,118 @@ PEF3
                     <h3 className="text-[10px] font-bold text-white text-center mb-2 truncate px-2 relative z-10">{exportTitle || 'My Class Schedule'}</h3>
 
                     {/* Preview Grid */}
-                    <div
-                      className="flex-1 overflow-hidden"
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: showTimeLabels ? `28px repeat(${visibleDays.length}, 1fr)` : `repeat(${visibleDays.length}, 1fr)`,
-                        // Use full 30-min resolution, limit to about 24 slots (7am-7pm)
-                        gridTemplateRows: `auto repeat(${TIME_SLOTS.length}, 1fr)`,
-                        gap: '1px',
-                      }}
-                    >
-                      {/* Header */}
-                      {showTimeLabels && <div></div>}
-                      {visibleDays.map(day => (
+                    {(() => {
+                      // Use filtered time slots for preview when autoFitTime is enabled
+                      const previewTimeSlots = autoFitTime ? getFilteredTimeSlots(scheduleEntries, TIME_SLOTS) : TIME_SLOTS;
+                      return (
                         <div
-                          key={day}
-                          className="text-[5px] text-white/80 text-center bg-white/10 rounded-sm py-0.5 font-medium"
+                          className="flex-1 overflow-hidden"
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: showTimeLabels ? `28px repeat(${visibleDays.length}, 1fr)` : `repeat(${visibleDays.length}, 1fr)`,
+                            gridTemplateRows: `auto repeat(${previewTimeSlots.length}, 1fr)`,
+                            gap: '1px',
+                          }}
                         >
-                          {day.slice(0, 3)}
-                        </div>
-                      ))}
-
-                      {/* Time slots preview - 30 min resolution */}
-                      {TIME_SLOTS.map((time, rowIndex) => (
-                        <Fragment key={time}>
-                          {/* Time label - only show for full hours */}
-                          {showTimeLabels && (
+                          {/* Header */}
+                          {showTimeLabels && <div></div>}
+                          {visibleDays.map(day => (
                             <div
-                              key={`time-${time}`}
-                              className="text-[4px] text-white/40 text-right pr-1 flex items-center justify-end"
-                              style={{ gridColumn: 1, gridRow: rowIndex + 2 }}
+                              key={day}
+                              className="text-[5px] text-white/80 text-center bg-white/10 rounded-sm py-0.5 font-medium"
                             >
-                              {time.endsWith(':00') ? formatTimeLabel(time).replace(' ', '') : ''}
+                              {day.slice(0, 3)}
                             </div>
-                          )}
+                          ))}
 
-                          {/* Day cells */}
-                          {visibleDays.map((day, dayIndex) => {
-                            const entry = scheduleEntries.find(e => {
-                              if (e.day !== day) return false;
-                              const entryStart = parseInt(e.startTime.replace(':', ''));
-                              const entryEnd = parseInt(e.endTime.replace(':', ''));
-                              const slotTime = parseInt(time.replace(':', ''));
-
-                              // Check if slot is within entry duration
-                              // For 30-min slots: current slot starts at time, ends at time+30
-                              // So we check if time >= entryStart and time < entryEnd
-                              return slotTime >= entryStart && slotTime < entryEnd;
-                            });
-
-                            // Exact start match check
-                            const isStart = scheduleEntries.some(e => e.day === day && e.startTime === time);
-
-                            if (entry && !isStart) return null;
-
-                            if (entry && isStart) {
-                              const startMinutes = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
-                              const endMinutes = parseInt(entry.endTime.split(':')[0]) * 60 + parseInt(entry.endTime.split(':')[1]);
-                              // Span is in 30-minute units
-                              const spanSlots = Math.ceil((endMinutes - startMinutes) / 30);
-
-                              return (
+                          {/* Time slots preview - 30 min resolution */}
+                          {previewTimeSlots.map((time, rowIndex) => (
+                            <Fragment key={time}>
+                              {/* Time label - only show for full hours */}
+                              {showTimeLabels && (
                                 <div
-                                  key={`${day}-${time}`}
-                                  className="rounded-sm overflow-hidden p-0.5"
-                                  style={{
-                                    gridColumn: showTimeLabels ? dayIndex + 2 : dayIndex + 1,
-                                    gridRow: `${rowIndex + 2} / span ${spanSlots}`,
-                                    backgroundColor: `${entry.color}50`,
-                                    borderLeft: `2px solid ${entry.color}`,
-                                    zIndex: 10
-                                  }}
+                                  key={`time-${time}`}
+                                  className="text-[4px] text-white/40 text-right pr-1 flex items-center justify-end"
+                                  style={{ gridColumn: 1, gridRow: rowIndex + 2 }}
                                 >
-                                  <p className="text-[4px] font-bold text-white leading-tight" style={{ wordWrap: 'break-word' }}>
-                                    {entry.subject}
-                                  </p>
-                                  {entry.room && (
-                                    <p className="text-[3px] text-white/70 leading-tight truncate">
-                                      {entry.room.replace('SECTION & ROOM #', '').trim()}
-                                    </p>
-                                  )}
+                                  {time.endsWith(':00') ? formatTimeLabel(time).replace(' ', '') : ''}
                                 </div>
-                              );
-                            }
+                              )}
 
-                            // Empty cell (optional background) - hide if setting enabled
-                            if (hideEmptyCells) return null;
+                              {/* Day cells */}
+                              {visibleDays.map((day, dayIndex) => {
+                                const entry = scheduleEntries.find(e => {
+                                  if (e.day !== day) return false;
+                                  const entryStart = parseInt(e.startTime.replace(':', ''));
+                                  const entryEnd = parseInt(e.endTime.replace(':', ''));
+                                  const slotTime = parseInt(time.replace(':', ''));
 
-                            return (
-                              <div
-                                key={`${day}-${time}`}
-                                style={{
-                                  gridColumn: showTimeLabels ? dayIndex + 2 : dayIndex + 1,
-                                  gridRow: rowIndex + 2,
-                                  // Only show lines for hours
-                                  borderTop: time.endsWith(':00') ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                                }}
-                              />
-                            );
-                          })
-                          }
-                        </Fragment>
-                      ))}
-                    </div>
+                                  // Check if slot is within entry duration
+                                  // For 30-min slots: current slot starts at time, ends at time+30
+                                  // So we check if time >= entryStart and time < entryEnd
+                                  return slotTime >= entryStart && slotTime < entryEnd;
+                                });
+
+                                // Exact start match check
+                                const isStart = scheduleEntries.some(e => e.day === day && e.startTime === time);
+
+                                if (entry && !isStart) return null;
+
+                                if (entry && isStart) {
+                                  const startMinutes = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
+                                  const endMinutes = parseInt(entry.endTime.split(':')[0]) * 60 + parseInt(entry.endTime.split(':')[1]);
+                                  // Span is in 30-minute units
+                                  const spanSlots = Math.ceil((endMinutes - startMinutes) / 30);
+
+                                  return (
+                                    <div
+                                      key={`${day}-${time}`}
+                                      className="rounded-sm overflow-hidden p-0.5"
+                                      style={{
+                                        gridColumn: showTimeLabels ? dayIndex + 2 : dayIndex + 1,
+                                        gridRow: `${rowIndex + 2} / span ${spanSlots}`,
+                                        backgroundColor: `${entry.color}50`,
+                                        borderLeft: `2px solid ${entry.color}`,
+                                        zIndex: 10
+                                      }}
+                                    >
+                                      <p className="text-[4px] font-bold text-white leading-tight" style={{ wordWrap: 'break-word' }}>
+                                        {entry.subject}
+                                      </p>
+                                      {entry.room && (
+                                        <p className="text-[3px] text-white/70 leading-tight truncate">
+                                          {entry.room.replace('SECTION & ROOM #', '').trim()}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                // Empty cell (optional background) - hide if setting enabled
+                                if (hideEmptyCells) return null;
+
+                                return (
+                                  <div
+                                    key={`${day}-${time}`}
+                                    style={{
+                                      gridColumn: showTimeLabels ? dayIndex + 2 : dayIndex + 1,
+                                      gridRow: rowIndex + 2,
+                                      // Only show lines for hours
+                                      borderTop: time.endsWith(':00') ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                                    }}
+                                  />
+                                );
+                              })
+                              }
+                            </Fragment>
+                          ))}
+                        </div>
+                      );
+                    })()}
 
                     {/* Preview Footer */}
                     {showFooter && (
-                      <p className="text-[5px] text-white/40 text-center mt-2">
+                      <p className="text-[5px] text-white/40 text-center mt-2 relative z-10">
                         {scheduleEntries.length} class{scheduleEntries.length !== 1 ? 'es' : ''} scheduled
                       </p>
                     )}
