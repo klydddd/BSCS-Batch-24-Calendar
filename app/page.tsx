@@ -6,6 +6,7 @@ import { Analytics } from '@vercel/analytics/next';
 import { Snowfall } from 'react-snowfall';
 import html2canvas from 'html2canvas';
 import Tesseract from 'tesseract.js';
+import Link from 'next/link';
 
 interface UserSession {
   email: string;
@@ -3263,6 +3264,25 @@ PEF3
           </div>
         )
       }
+
+      {/* Footer with Privacy & Terms Links */}
+      <footer className="fixed bottom-0 left-0 right-0 z-40 px-6 py-3 bg-gradient-to-t from-red-900/80 to-transparent pointer-events-none">
+        <div className="max-w-7xl mx-auto flex items-center justify-center gap-4 pointer-events-auto">
+          <Link
+            href="/privacy"
+            className="text-white/50 hover:text-white/80 text-xs font-medium transition-colors"
+          >
+            Privacy Policy
+          </Link>
+          <span className="text-white/30">•</span>
+          <Link
+            href="/terms"
+            className="text-white/50 hover:text-white/80 text-xs font-medium transition-colors"
+          >
+            Terms of Service
+          </Link>
+        </div>
+      </footer>
 
       <Analytics />
     </div >

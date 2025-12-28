@@ -5,7 +5,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "BSCS Calendar | Minimalist Workflow",
+  title: "BSCS Calendar",
   description: "BSCS Batch 2025 Exclusive Calendar Automation",
 };
 
