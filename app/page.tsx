@@ -1672,9 +1672,12 @@ PEF3
 
           {/* Manage Tab Glass Container */}
           {activeTab === 'manage' && (
-            <div className="glass-container animate-slide-up">
+            <div
+              className={`animate-slide-up ${isMobileView ? 'fixed inset-0 top-14 z-40 bg-red-900/95' : 'glass-container'}`}
+              style={{ maxWidth: isMobileView ? '100%' : '900px', paddingTop: isMobileView ? '10px' : '80px' }}
+            >
               {!session ? (
-                <div className="glass-panel p-12 max-w-md mx-auto text-center">
+                <div className={`${isMobileView ? 'mx-4 mt-8 bg-black/30 backdrop-blur-sm rounded-2xl p-8 border border-white/10 text-center' : 'glass-panel p-12 max-w-md mx-auto text-center'}`}>
                   <svg className="w-14 h-14 mx-auto mb-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
                     <rect x="5" y="11" width="14" height="10" rx="2" />
                     <path d="M7 11V7a5 5 0 1110 0v4" />
@@ -1686,14 +1689,47 @@ PEF3
                   </button>
                 </div>
               ) : (
-                <div className="glass-panel p-5 w-full max-w-4xl mx-auto">
+                <div className={`w-full mx-auto ${isMobileView ? 'h-full p-4 pt-2 overflow-y-auto flex flex-col pb-20' : 'glass-panel p-5 w-full max-w-4xl'}`}>
                   {/* Header with search, view toggle, and refresh */}
-                  <div className="mb-5">
-                    <div className="flex flex-wrap gap-3 items-center">
+                  <div className="mb-4">
+                    {/* Calendar Navigation for calendar view - full width on mobile */}
+                    {viewMode === 'calendar' && (
+                      <div className={`flex items-center justify-between mb-3 ${isMobileView ? 'gap-2' : 'gap-3'}`}>
+                        <button
+                          onClick={prevMonth}
+                          className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path d="M15 18l-6-6 6-6" />
+                          </svg>
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={goToToday}
+                            className="px-3 py-1.5 text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                          >
+                            Today
+                          </button>
+                          <span className="text-white font-semibold">
+                            {formatMonthYear(currentMonth)}
+                          </span>
+                        </div>
+                        <button
+                          onClick={nextMonth}
+                          className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 items-center">
                       {/* Search - only show in list view */}
                       {viewMode === 'list' && (
-                        <div className="flex-1 relative min-w-[200px]">
-                          <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <div className="flex-1 relative">
+                          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                             <circle cx="11" cy="11" r="8" />
                             <path d="M21 21l-4.35-4.35" />
                           </svg>
@@ -1702,39 +1738,8 @@ PEF3
                             value={eventSearchQuery}
                             onChange={(e) => setEventSearchQuery(e.target.value)}
                             placeholder="Search events..."
-                            className="input-glass w-full pl-11"
+                            className={`input-glass w-full ${isMobileView ? 'pl-9 py-2.5 text-sm' : 'pl-11'}`}
                           />
-                        </div>
-                      )}
-
-                      {/* Calendar navigation - only show in calendar view */}
-                      {viewMode === 'calendar' && (
-                        <div className="flex-1 flex items-center gap-2">
-                          <button
-                            onClick={prevMonth}
-                            className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path d="M15 18l-6-6 6-6" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={goToToday}
-                            className="px-3 py-1.5 text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                          >
-                            Today
-                          </button>
-                          <button
-                            onClick={nextMonth}
-                            className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                              <path d="M9 18l6-6-6-6" />
-                            </svg>
-                          </button>
-                          <span className="text-white font-semibold ml-2">
-                            {formatMonthYear(currentMonth)}
-                          </span>
                         </div>
                       )}
 
@@ -1800,7 +1805,7 @@ PEF3
                           <p className="text-white/50 text-sm">{eventSearchQuery ? 'No events found.' : 'No upcoming events.'}</p>
                         </div>
                       ) : (
-                        <div className="space-y-2 max-h-[350px] overflow-y-auto">
+                        <div className={`space-y-2 ${isMobileView ? 'overflow-y-auto flex-1' : 'max-h-[350px] overflow-y-auto'}`}>
                           {filteredEvents.map((event) => (
                             <div key={event.id} className="event-card-glass">
                               <div className="flex items-start gap-4">
@@ -1863,22 +1868,22 @@ PEF3
                     </>
                   ) : (
                     /* Calendar View */
-                    <div className="calendar-grid">
+                    <div className={`calendar-grid ${isMobileView ? 'flex-1 flex flex-col overflow-hidden' : ''}`}>
                       {/* Day headers */}
-                      <div className="grid grid-cols-7 gap-1 mb-2">
+                      <div className="grid grid-cols-7 gap-1 mb-1">
                         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                          <div key={day} className="text-center text-xs font-semibold text-white/50 py-2">
-                            {day}
+                          <div key={day} className={`text-center font-semibold text-white/50 py-1 ${isMobileView ? 'text-[10px]' : 'text-xs'}`}>
+                            {isMobileView ? day.charAt(0) : day}
                           </div>
                         ))}
                       </div>
 
-                      {/* Calendar grid */}
-                      <div className="grid grid-cols-7 gap-1">
+                      {/* Calendar grid - flex-1 to fill remaining height */}
+                      <div className={`grid grid-cols-7 gap-1 ${isMobileView ? 'flex-1' : ''}`} style={isMobileView ? { gridAutoRows: '1fr' } : undefined}>
                         {getCalendarDays(currentMonth).map((date, index) => (
                           <div
                             key={index}
-                            className={`min-h-[80px] p-1 rounded-lg transition-all ${date
+                            className={`${isMobileView ? '' : 'min-h-[80px]'} p-1 rounded-lg transition-all ${date
                               ? isToday(date)
                                 ? 'bg-white/20 border border-white/40'
                                 : 'bg-white/5 hover:bg-white/10'
@@ -1887,27 +1892,27 @@ PEF3
                           >
                             {date && (
                               <>
-                                <div className={`text-xs font-medium mb-1 ${isToday(date) ? 'text-white' : 'text-white/60'
+                                <div className={`${isMobileView ? 'text-[10px]' : 'text-xs'} font-medium mb-0.5 ${isToday(date) ? 'text-white' : 'text-white/60'
                                   }`}>
                                   {date.getDate()}
                                 </div>
-                                <div className="space-y-0.5 overflow-hidden max-h-[56px]">
-                                  {getEventsForDate(date).slice(0, 3).map((event) => (
+                                <div className={`space-y-0.5 overflow-hidden ${isMobileView ? 'flex-1' : 'max-h-[56px]'}`}>
+                                  {getEventsForDate(date).slice(0, isMobileView ? 2 : 3).map((event) => (
                                     <button
                                       key={event.id}
                                       onClick={() => openEditModal(event)}
-                                      className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] truncate transition-all hover:opacity-80 ${event.isAllDay
+                                      className={`w-full text-left px-1 py-0.5 rounded ${isMobileView ? 'text-[8px]' : 'text-[10px]'} truncate transition-all hover:opacity-80 ${event.isAllDay
                                         ? 'bg-amber-500/30 text-amber-200'
                                         : 'bg-blue-500/30 text-blue-200'
                                         }`}
                                       title={event.title}
                                     >
-                                      {event.title}
+                                      {isMobileView ? event.title.substring(0, 4) + (event.title.length > 4 ? '...' : '') : event.title}
                                     </button>
                                   ))}
-                                  {getEventsForDate(date).length > 3 && (
-                                    <p className="text-[10px] text-white/40 px-1">
-                                      +{getEventsForDate(date).length - 3} more
+                                  {getEventsForDate(date).length > (isMobileView ? 2 : 3) && (
+                                    <p className={`${isMobileView ? 'text-[8px]' : 'text-[10px]'} text-white/40 px-1`}>
+                                      +{getEventsForDate(date).length - (isMobileView ? 2 : 3)} more
                                     </p>
                                   )}
                                 </div>
@@ -1918,7 +1923,7 @@ PEF3
                       </div>
 
                       {/* Event count */}
-                      <p className="text-center text-white/40 text-xs mt-5">
+                      <p className="text-center text-white/40 text-xs mt-4">
                         {calendarEvents.length} event{calendarEvents.length !== 1 ? 's' : ''} total
                       </p>
                     </div>
@@ -3266,7 +3271,7 @@ PEF3
       }
 
       {/* Footer with Privacy & Terms Links */}
-      <footer className="fixed bottom-0 left-0 right-0 z-40 px-6 py-3 bg-gradient-to-t from-red-900/80 to-transparent pointer-events-none">
+      <footer className="fixed bottom-0 left-0 right-0 z-40 px-6 py-3 bg-linear-to-t from-red-900/80 to-transparent pointer-events-none">
         <div className="max-w-7xl mx-auto flex items-center justify-center gap-4 pointer-events-auto">
           <Link
             href="/privacy"
