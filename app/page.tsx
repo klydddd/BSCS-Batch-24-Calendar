@@ -32,6 +32,8 @@ type ActiveTab = 'create' | 'manage' | 'schedule';
 interface ScheduleEntry {
   id: string;
   subject: string;
+  subjectCode?: string;  // Optional separate subject code (e.g., "CMSC 128")
+  subjectName?: string;  // Optional separate subject name (e.g., "Software Engineering")
   room: string;
   day: string;
   startTime: string;
@@ -83,6 +85,8 @@ export default function Home() {
   const [editingScheduleEntry, setEditingScheduleEntry] = useState<ScheduleEntry | null>(null);
   const [scheduleForm, setScheduleForm] = useState({
     subject: '',
+    subjectCode: '',
+    subjectName: '',
     room: '',
     day: 'Monday',
     startTime: '07:00',
@@ -107,7 +111,8 @@ export default function Home() {
 
   // Export customization options
   const [exportTitle, setExportTitle] = useState('My Class Schedule');
-  const [exportTheme, setExportTheme] = useState<'red' | 'blue' | 'green' | 'purple' | 'dark'>('red');
+  const [exportTheme, setExportTheme] = useState<'red' | 'blue' | 'green' | 'purple' | 'dark' | 'custom'>('red');
+  const [customHue, setCustomHue] = useState(0); // HSL hue value 0-360 for custom color
   const [showTimeLabels, setShowTimeLabels] = useState(true);
   const [showFooter, setShowFooter] = useState(true);
   const [showRoomInfo, setShowRoomInfo] = useState(true);
@@ -115,6 +120,20 @@ export default function Home() {
   const [visibleDays, setVisibleDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
   const [hideEmptyCells, setHideEmptyCells] = useState(false);
   const [autoFitTime, setAutoFitTime] = useState(false); // Hide excess time rows outside schedule range
+  const [subjectDisplayMode, setSubjectDisplayMode] = useState<'code' | 'name' | 'both'>('both'); // How to display subject in export
+
+  // Generate gradient colors from hue value
+  const getCustomGradient = (hue: number) => {
+    // Create a rich gradient with darker and lighter variations of the hue
+    const darkColor = `hsl(${hue}, 70%, 15%)`;
+    const midColor = `hsl(${hue}, 65%, 25%)`;
+    const darkColor2 = `hsl(${hue}, 70%, 15%)`;
+    return `linear-gradient(135deg, ${darkColor} 0%, ${midColor} 50%, ${darkColor2} 100%)`;
+  };
+
+  const getCustomBorderColor = (hue: number) => {
+    return `hsla(${hue}, 60%, 30%, 0.5)`;
+  };
 
   const toggleVisibleDay = (day: string) => {
     if (visibleDays.includes(day)) {
@@ -700,6 +719,33 @@ export default function Home() {
     });
   };
 
+  // Get subject display text based on display mode preference
+  const getSubjectDisplayText = (entry: ScheduleEntry): string => {
+    const hasCode = entry.subjectCode && entry.subjectCode.trim();
+    const hasName = entry.subjectName && entry.subjectName.trim();
+
+    // If entry doesn't have separate code/name, just use the combined subject
+    if (!hasCode && !hasName) {
+      return entry.subject;
+    }
+
+    // Return based on display mode
+    switch (subjectDisplayMode) {
+      case 'code':
+        return hasCode ? entry.subjectCode! : entry.subject;
+      case 'name':
+        return hasName ? entry.subjectName! : entry.subject;
+      case 'both':
+      default:
+        return entry.subject;
+    }
+  };
+
+  // Check if any entries have both code and name (for showing the display option)
+  const hasEntriesWithBothCodeAndName = scheduleEntries.some(
+    entry => entry.subjectCode?.trim() && entry.subjectName?.trim()
+  );
+
   const getScheduleEntry = (day: string, time: string) => {
     return scheduleEntries.find(entry => {
       if (entry.day !== day) return false;
@@ -753,6 +799,8 @@ export default function Home() {
     setEditingScheduleEntry(null);
     setScheduleForm({
       subject: '',
+      subjectCode: '',
+      subjectName: '',
       room: '',
       day: day || 'Monday',
       startTime: time || '07:00',
@@ -766,6 +814,8 @@ export default function Home() {
     setEditingScheduleEntry(entry);
     setScheduleForm({
       subject: entry.subject,
+      subjectCode: entry.subjectCode || '',
+      subjectName: entry.subjectName || '',
       room: entry.room || '',
       day: entry.day,
       startTime: entry.startTime,
@@ -780,6 +830,8 @@ export default function Home() {
     setEditingScheduleEntry(null);
     setScheduleForm({
       subject: '',
+      subjectCode: '',
+      subjectName: '',
       room: '',
       day: 'Monday',
       startTime: '07:00',
@@ -789,13 +841,37 @@ export default function Home() {
   };
 
   const handleSaveScheduleEntry = () => {
-    if (!scheduleForm.subject.trim()) return;
+    // Require at least subject code or subject name
+    const hasCode = scheduleForm.subjectCode.trim();
+    const hasName = scheduleForm.subjectName.trim();
+
+    // If neither code nor name is provided, check for the combined subject field (backward compatibility)
+    if (!hasCode && !hasName && !scheduleForm.subject.trim()) return;
+
+    // Compute the combined subject display
+    let combinedSubject = scheduleForm.subject.trim();
+    if (hasCode || hasName) {
+      if (hasCode && hasName) {
+        combinedSubject = `${scheduleForm.subjectCode.trim()} - ${scheduleForm.subjectName.trim()}`;
+      } else if (hasCode) {
+        combinedSubject = scheduleForm.subjectCode.trim();
+      } else {
+        combinedSubject = scheduleForm.subjectName.trim();
+      }
+    }
+
+    const entryData = {
+      ...scheduleForm,
+      subject: combinedSubject,
+      subjectCode: scheduleForm.subjectCode.trim() || undefined,
+      subjectName: scheduleForm.subjectName.trim() || undefined,
+    };
 
     if (editingScheduleEntry) {
       // Update existing entry
       const updatedEntries = scheduleEntries.map(e =>
         e.id === editingScheduleEntry.id
-          ? { ...e, ...scheduleForm }
+          ? { ...e, ...entryData }
           : e
       );
       setScheduleEntries(updatedEntries);
@@ -804,7 +880,7 @@ export default function Home() {
       // Add new entry
       const newEntry: ScheduleEntry = {
         id: Date.now().toString(),
-        ...scheduleForm
+        ...entryData
       };
       const updatedEntries = [...scheduleEntries, newEntry];
       setScheduleEntries(updatedEntries);
@@ -845,6 +921,8 @@ export default function Home() {
       setEditingScheduleEntry(null);
       setScheduleForm({
         subject: '',
+        subjectCode: '',
+        subjectName: '',
         room: '',
         day: dragStart.day,
         startTime: startTime,
@@ -915,6 +993,7 @@ export default function Home() {
         green: 'linear-gradient(135deg, #14532d 0%, #166534 50%, #14532d 100%)',
         purple: 'linear-gradient(135deg, #4c1d95 0%, #6b21a8 50%, #4c1d95 100%)',
         dark: 'linear-gradient(135deg, #1f2937 0%, #111827 50%, #1f2937 100%)',
+        custom: getCustomGradient(customHue),
       };
 
       const themeBorderColors: Record<string, string> = {
@@ -923,6 +1002,7 @@ export default function Home() {
         green: 'rgba(22,101,52,0.5)',
         purple: 'rgba(107,33,168,0.5)',
         dark: 'rgba(75,85,99,0.5)',
+        custom: getCustomBorderColor(customHue),
       };
 
       exportContainer.style.width = `${width}px`;
@@ -1049,7 +1129,7 @@ export default function Home() {
                 flex-direction: column;
               ">
                 <div style="font-size: ${isLandscape ? '11px' : '13px'}; font-weight: 700; color: white; word-wrap: break-word; line-height: 1.3;">
-                  ${entry.subject}
+                  ${getSubjectDisplayText(entry)}
                 </div>
                 ${(showRoomInfo && entry.room) ? `<div style="font-size: ${isLandscape ? '9px' : '10px'}; color: rgba(255,255,255,0.8); margin-top: 3px;">${entry.room}</div>` : ''}
                 <div style="font-size: ${isLandscape ? '8px' : '9px'}; color: rgba(255,255,255,0.7); margin-top: auto; padding-top: 3px;">
@@ -1315,8 +1395,8 @@ export default function Home() {
 
       setOcrStatus('Processing schedule data...');
 
-      const parsedEntries = result.data as { subjectCode: string; day: string; startTime: string; endTime: string; room?: string }[];
-      console.log('Parsed entries from Gemini:', parsedEntries);
+      const parsedEntries = result.data as { subjectCode: string; subjectName?: string; day: string; startTime: string; endTime: string; room?: string }[];
+      console.log('Parsed entries from API:', parsedEntries);
 
       if (!parsedEntries || parsedEntries.length === 0) {
         setOcrStatus('No schedule entries found. Please try a clearer image or enter manually.');
@@ -1327,28 +1407,45 @@ export default function Home() {
       const colorPalette = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
       const newEntries: ScheduleEntry[] = [];
 
-      // Map to track colors assigned to each subject
+      // Map to track colors assigned to each subject (use code as key for consistency)
       const subjectColorMap = new Map<string, string>();
       let colorIndex = 0;
 
       // First, check existing entries for already assigned colors
       for (const existingEntry of scheduleEntries) {
-        if (!subjectColorMap.has(existingEntry.subject)) {
-          subjectColorMap.set(existingEntry.subject, existingEntry.color);
+        const key = existingEntry.subjectCode || existingEntry.subject;
+        if (!subjectColorMap.has(key)) {
+          subjectColorMap.set(key, existingEntry.color);
         }
       }
 
       for (const entry of parsedEntries) {
         // Handle potentially combined days (e.g., "Monday, Thursday")
         const entryDays = entry.day.split(/,|&| and /).map(d => d.trim());
-        const subjectName = entry.subjectCode || `Class ${colorIndex + 1}`;
 
-        // Get or assign color for this subject
-        let subjectColor = subjectColorMap.get(subjectName);
+        // Get subject code and name
+        const subjectCode = entry.subjectCode?.trim() || '';
+        const subjectName = entry.subjectName?.trim() || '';
+
+        // Compute combined subject for display
+        let combinedSubject: string;
+        if (subjectCode && subjectName) {
+          combinedSubject = `${subjectCode} - ${subjectName}`;
+        } else if (subjectCode) {
+          combinedSubject = subjectCode;
+        } else if (subjectName) {
+          combinedSubject = subjectName;
+        } else {
+          combinedSubject = `Class ${colorIndex + 1}`;
+        }
+
+        // Get or assign color for this subject (use code as key)
+        const colorKey = subjectCode || combinedSubject;
+        let subjectColor = subjectColorMap.get(colorKey);
         if (!subjectColor) {
           // Assign new color for this subject
           subjectColor = colorPalette[colorIndex % colorPalette.length];
-          subjectColorMap.set(subjectName, subjectColor);
+          subjectColorMap.set(colorKey, subjectColor);
           colorIndex++;
         }
 
@@ -1376,8 +1473,10 @@ export default function Home() {
 
           if (!exists && entry.startTime && entry.endTime && normalizedDay) {
             newEntries.push({
-              id: `gemini-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-              subject: subjectName,
+              id: `ocr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              subject: combinedSubject,
+              subjectCode: subjectCode || undefined,
+              subjectName: subjectName || undefined,
               day: normalizedDay,
               startTime: entry.startTime,
               endTime: entry.endTime,
@@ -1950,7 +2049,7 @@ PEF3
                       <line x1="15" y1="4" x2="15" y2="10" />
                     </svg>
                     <div>
-                      <h3 className="font-semibold text-white text-sm py-2">My Class Schedule</h3>
+                      <h3 className="font-semibold text-white text-sm py-2">Class Schedule</h3>
                       {/* <p className="text-xs text-white/50 mt-0.5 hidden sm:block">Click on a time slot to add a class</p> */}
                       {/* <p className="text-xs text-white/50 mt-0.5 sm:hidden">Tap & hold to select time range</p> */}
                     </div>
@@ -2311,6 +2410,8 @@ PEF3
                                   const endTime = `${endHour.toString().padStart(2, '0')}:${startMin}`;
                                   setScheduleForm({
                                     subject: '',
+                                    subjectCode: '',
+                                    subjectName: '',
                                     room: '',
                                     day: selectedMobileDay,
                                     startTime: time,
@@ -2356,10 +2457,7 @@ PEF3
 
                 {/* Entry count */}
                 <p className="text-center text-white/40 text-xs mt-3">
-                  {scheduleEntries.length} class{scheduleEntries.length !== 1 ? 'es' : ''} scheduled
-                  {isMobileView && scheduleEntries.filter(e => e.day === selectedMobileDay).length > 0 && (
-                    <span> • {scheduleEntries.filter(e => e.day === selectedMobileDay).length} on {selectedMobileDay}</span>
-                  )}
+                  • The AI can make mistakes. Please double check the schedule.
                 </p>
               </div>
             </div>
@@ -2647,16 +2745,29 @@ PEF3
 
             {/* Form */}
             <div className="p-5 space-y-4">
-              {/* Subject Name */}
+              {/* Subject Code */}
               <div>
-                <label className="block text-xs font-semibold text-white/70 mb-2">Subject / Course Name</label>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Subject Code</label>
                 <input
                   type="text"
-                  value={scheduleForm.subject}
-                  onChange={(e) => setScheduleForm({ ...scheduleForm, subject: e.target.value })}
+                  value={scheduleForm.subjectCode}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, subjectCode: e.target.value })}
                   className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm placeholder-white/50 focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all"
-                  placeholder="e.g., CMSC 128 - Software Engineering"
+                  placeholder="e.g., CMSC 128"
                 />
+              </div>
+
+              {/* Subject Name */}
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Subject Name</label>
+                <input
+                  type="text"
+                  value={scheduleForm.subjectName}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, subjectName: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/15 border border-white/25 rounded-xl text-white text-sm placeholder-white/50 focus:outline-none focus:border-white/50 focus:bg-white/20 transition-all"
+                  placeholder="e.g., Software Engineering"
+                />
+                <p className="text-[10px] text-white/40 mt-1">At least one of Subject Code or Name is required</p>
               </div>
 
               {/* Room */}
@@ -2759,7 +2870,7 @@ PEF3
                 </button>
                 <button
                   onClick={handleSaveScheduleEntry}
-                  disabled={!scheduleForm.subject.trim()}
+                  disabled={!scheduleForm.subjectCode.trim() && !scheduleForm.subjectName.trim() && !scheduleForm.subject.trim()}
                   className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2.5 bg-red-500/50 hover:bg-red-500/60 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editingScheduleEntry ? 'Save Changes' : 'Add Class'}
@@ -2849,7 +2960,7 @@ PEF3
                 {/* Theme Selector */}
                 <div>
                   <label className="block text-xs font-semibold text-white/70 mb-2">Theme</label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     {[
                       { id: 'red', color: '#991b1b', label: 'Red' },
                       { id: 'blue', color: '#1e40af', label: 'Blue' },
@@ -2866,7 +2977,44 @@ PEF3
                         title={theme.label}
                       />
                     ))}
+                    {/* Custom Color Button */}
+                    <button
+                      onClick={() => setExportTheme('custom')}
+                      className={`w-8 h-8 rounded-full border-2 transition-all overflow-hidden ${exportTheme === 'custom' ? 'border-white scale-110' : 'border-transparent hover:border-white/50'
+                        }`}
+                      style={{
+                        background: exportTheme === 'custom'
+                          ? `hsl(${customHue}, 65%, 25%)`
+                          : 'conic-gradient(from 0deg, hsl(0,70%,25%), hsl(60,70%,25%), hsl(120,70%,25%), hsl(180,70%,25%), hsl(240,70%,25%), hsl(300,70%,25%), hsl(360,70%,25%))'
+                      }}
+                      title="Custom Color"
+                    />
                   </div>
+
+                  {/* Custom Color Slider */}
+                  {exportTheme === 'custom' && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-6 h-6 rounded-full border border-white/30 flex-shrink-0"
+                          style={{ background: `hsl(${customHue}, 65%, 25%)` }}
+                        />
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={customHue}
+                          onChange={(e) => setCustomHue(parseInt(e.target.value))}
+                          className="flex-1 h-3 rounded-full appearance-none cursor-pointer"
+                          style={{
+                            background: 'linear-gradient(to right, hsl(0,70%,25%), hsl(60,70%,25%), hsl(120,70%,25%), hsl(180,70%,25%), hsl(240,70%,25%), hsl(300,70%,25%), hsl(360,70%,25%))',
+                          }}
+                        />
+                        <span className="text-xs text-white/60 w-8 text-right">{customHue}°</span>
+                      </div>
+                      <p className="text-[10px] text-white/40">Drag slider to pick any color</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Toggle Options */}
@@ -2908,6 +3056,37 @@ PEF3
                     Fit Time
                   </button>
                 </div>
+
+                {/* Subject Display Mode - only show if any entry has both code and name */}
+                {hasEntriesWithBothCodeAndName && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white/70 mb-2">Subject Display</label>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setSubjectDisplayMode('code')}
+                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${subjectDisplayMode === 'code' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                          }`}
+                      >
+                        Code Only
+                      </button>
+                      <button
+                        onClick={() => setSubjectDisplayMode('name')}
+                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${subjectDisplayMode === 'name' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                          }`}
+                      >
+                        Name Only
+                      </button>
+                      <button
+                        onClick={() => setSubjectDisplayMode('both')}
+                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all ${subjectDisplayMode === 'both' ? 'bg-white/20 text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
+                          }`}
+                      >
+                        Both
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-white/40 mt-1">Choose what to show for subjects with both code and name</p>
+                  </div>
+                )}
 
                 {/* Day Selection */}
                 <div>
@@ -2958,7 +3137,8 @@ PEF3
                       : exportTheme === 'blue' ? 'linear-gradient(135deg, #1e3a5f 0%, #1e40af 50%, #1e3a5f 100%)'
                         : exportTheme === 'green' ? 'linear-gradient(135deg, #14532d 0%, #166534 50%, #14532d 100%)'
                           : exportTheme === 'purple' ? 'linear-gradient(135deg, #4c1d95 0%, #6b21a8 50%, #4c1d95 100%)'
-                            : 'linear-gradient(135deg, #1f2937 0%, #111827 50%, #1f2937 100%)',
+                            : exportTheme === 'dark' ? 'linear-gradient(135deg, #1f2937 0%, #111827 50%, #1f2937 100%)'
+                              : getCustomGradient(customHue),
                   }}
                 >
                   <div className="w-full h-full p-3 flex flex-col relative">
@@ -3057,7 +3237,7 @@ PEF3
                                       }}
                                     >
                                       <p className="text-[4px] font-bold text-white leading-tight" style={{ wordWrap: 'break-word' }}>
-                                        {entry.subject}
+                                        {getSubjectDisplayText(entry)}
                                       </p>
                                       {entry.room && (
                                         <p className="text-[3px] text-white/70 leading-tight truncate">
