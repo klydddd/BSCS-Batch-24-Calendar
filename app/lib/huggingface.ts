@@ -14,37 +14,62 @@ export interface ParsedScheduleEntry {
 
 const SCHEDULE_PROMPT = `You are a schedule parser. Analyze this image of a class schedule table.
 
-The table typically has columns like: SUBJECT CODE, SUBJECT TITLE/NAME, SCHEDULE, SECTION & ROOM #, UNITS, FACULTY ASSIGNED.
+The table typically has columns like: SUBJECT CODE, SUBJECT NAME, SCHEDULE, SECTION & ROOM #, UNITS, FACULTY ASSIGNED.
 
 Extract ONLY the following information for each class row:
-1. subjectCode: The course code (e.g., "CMSC 128", "PSYCH-EC 02", "ALC01", "CCS05")
-2. subjectName: The subject title/name (e.g., "Software Engineering", "Clinical Psychology", "Data Structures")
+1. subjectCode: The course code (e.g., "CMSC 128", "ALC01", "CCS05", "OPS01")
+2. subjectName: The subject title/name (e.g., "Software Engineering", "Operating Systems")
 3. schedule: Parse the SCHEDULE column which contains day codes and times.
-4. room: The entire text from the "SECTION & ROOM #" or "ROOM" column (e.g., "BSCS-1A / 501", "TBA")
+4. room: The entire text from the "SECTION & ROOM #" or "ROOM" column (e.g., "BSCS-2-A/TBA", "EA-611(lab)")
 
-Day codes: M = Monday, T = Tuesday, W = Wednesday, TH = Thursday, F = Friday, S = Saturday, SU = Sunday
+CRITICAL - DAY CODE PARSING RULES:
+- "T" alone = Tuesday (NOT Thursday)
+- "TH" or "Th" = Thursday (the H distinguishes it from Tuesday)
+- "M" = Monday
+- "W" = Wednesday  
+- "F" = Friday
+- "S" or "SA" = Saturday
+- "SU" = Sunday
 
-For entries with multiple schedules or combined days (e.g., "MTH", "TTh", "MW"), create entries for EACH day.
+COMBINED DAY CODES - Parse carefully:
+- "MTH" = Monday AND Thursday (M + TH)
+- "TTH" or "TTh" = Tuesday AND Thursday (T + TH)
+- "MW" = Monday AND Wednesday
+- "MWF" = Monday, Wednesday, AND Friday
+- "TF" = Tuesday AND Friday
 
-Return a JSON array of objects with this structure:
+For each schedule entry, create SEPARATE JSON objects for EACH day.
+
+Example input: "MTH 8:30AM-10:00AM"
+Correct output: TWO entries - one for "Monday" and one for "Thursday" (NOT Tuesday!)
+
+Example input: "T 9:00AM-12:00PM"  
+Correct output: ONE entry for "Tuesday"
+
+Example input: "TH 3:00PM-6:00PM"
+Correct output: ONE entry for "Thursday"
+
+Return a JSON array with this structure:
 [
   {
-    "subjectCode": "PSYCH-EC 02",
-    "subjectName": "Clinical Psychology",
-    "day": "Wednesday",
-    "startTime": "09:00",
-    "endTime": "12:00",
-    "room": "TBA"
+    "subjectCode": "OPS01",
+    "subjectName": "Operating Systems",
+    "day": "Thursday",
+    "startTime": "15:00",
+    "endTime": "18:00",
+    "room": "EA-611(lab)"
   }
 ]
 
 IMPORTANT:
-- Convert times to 24-hour format (e.g. 1:00PM -> 13:00, 9:00AM -> 09:00)
-- If "MTH" or "MW" appears, create separate entries for each day with the SAME subject info.
+- Convert times to 24-hour format (e.g. 1:00PM -> 13:00, 9:00AM -> 09:00, 3:00PM -> 15:00)
+- When you see "TH" or "Th", it is ALWAYS Thursday, never Tuesday
+- When you see just "T" without H, it is Tuesday
 - Return ONLY the JSON array, no markdown, no explanation.
 - Ignore header rows and total rows.
 - ALWAYS extract both subjectCode and subjectName if they are in separate columns.
-- If only one column exists for subject, use it for subjectCode and leave subjectName empty.`;
+- If only one column exists for subject, use it for subjectCode and leave subjectName empty.`
+
 
 /**
  * Parse a schedule image using Hugging Face's vision-language model
