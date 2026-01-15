@@ -5,7 +5,7 @@ import { CalendarEvent, CalendarTask } from '../../types/calendar';
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { accessToken, calendarItem, calendarId, attendees, timezone } = body;
+        const { accessToken, calendarItem, calendarId, attendees, timezone, sendNotifications = true } = body;
 
         if (!accessToken) {
             return NextResponse.json(
@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
                 accessToken,
                 eventWithAttendees,
                 calendarId || 'primary',
-                tz
+                tz,
+                sendNotifications
             );
         } else if (calendarItem.type === 'task') {
             // Pass attendees to task creation (will be used to send invites)
@@ -44,7 +45,8 @@ export async function POST(request: NextRequest) {
                 accessToken,
                 calendarItem as CalendarTask,
                 calendarId || 'primary',
-                attendees || []
+                attendees || [],
+                sendNotifications
             );
         } else {
             return NextResponse.json(

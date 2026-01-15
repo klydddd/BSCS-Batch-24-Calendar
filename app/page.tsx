@@ -3,7 +3,7 @@
 import { useState, useEffect, FormEvent, KeyboardEvent, useRef, Fragment } from 'react';
 import { CalendarItem, CalendarEvent, CalendarTask, AIParseResponse, CalendarCreateResponse } from './types/calendar';
 import { Analytics } from '@vercel/analytics/next';
-import { Snowfall } from 'react-snowfall';
+// import { Snowfall } from 'react-snowfall';
 import html2canvas from 'html2canvas';
 import Tesseract from 'tesseract.js';
 import Link from 'next/link';
@@ -60,6 +60,7 @@ export default function Home() {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventItem[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [eventSearchQuery, setEventSearchQuery] = useState('');
 
   // Edit modal state
@@ -249,19 +250,56 @@ export default function Home() {
 
   const handleDeleteEvent = async (eventId: string, eventTitle: string) => {
     if (!session) return;
-    const confirmed = window.confirm(`Delete "${eventTitle}"?\n\nCancellation notifications will be sent to all attendees.`);
+
+    // Find the event to get its details
+    const eventToDelete = calendarEvents.find(e => e.id === eventId);
+    const hasAttendees = eventToDelete && eventToDelete.attendees.length > 0;
+
+    const confirmMessage = hasAttendees
+      ? `Delete "${eventTitle}"?\n\nA cancellation email will be sent to ${eventToDelete.attendees.length} attendee${eventToDelete.attendees.length !== 1 ? 's' : ''}.`
+      : `Delete "${eventTitle}"?`;
+
+    const confirmed = window.confirm(confirmMessage);
     if (!confirmed) return;
     setDeletingEventId(eventId);
     setError(null);
     try {
+      // Delete WITHOUT automatic notifications
       const response = await fetch(
-        `/api/calendar/events/${eventId}?access_token=${encodeURIComponent(session.accessToken)}&send_notifications=true`,
+        `/api/calendar/events/${eventId}?access_token=${encodeURIComponent(session.accessToken)}&send_notifications=false`,
         { method: 'DELETE' }
       );
       const result = await response.json();
       if (result.success) {
+        // Send cancellation email if there are attendees
+        if (eventToDelete && eventToDelete.attendees.length > 0) {
+          const attendeesList = eventToDelete.attendees.filter(email => email !== session.email);
+          if (attendeesList.length > 0) {
+            try {
+              await fetch('/api/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  accessToken: session.accessToken,
+                  senderEmail: session.email,
+                  recipients: attendeesList,
+                  events: [{
+                    title: eventToDelete.title,
+                    date: eventToDelete.start,
+                    isAllDay: eventToDelete.isAllDay
+                  }],
+                  emailType: 'cancellation'
+                }),
+              });
+            } catch (emailError) {
+              console.error('Failed to send cancellation email:', emailError);
+            }
+          }
+        }
+
         setCalendarEvents(calendarEvents.filter(e => e.id !== eventId));
-        setSuccess(`Deleted "${eventTitle}" successfully!`);
+        const emailMsg = hasAttendees ? ' Cancellation email sent.' : '';
+        setSuccess(`Deleted "${eventTitle}" successfully!${emailMsg}`);
       } else {
         setError(result.error || 'Failed to delete event');
       }
@@ -270,6 +308,93 @@ export default function Home() {
     } finally {
       setDeletingEventId(null);
     }
+  };
+
+  const handleDeleteAllEvents = async () => {
+    if (!session || calendarEvents.length === 0) return;
+    const confirmed = window.confirm(
+      `Delete ALL ${calendarEvents.length} events?\n\nThis action cannot be undone. A single cancellation summary email will be sent to all attendees.`
+    );
+    if (!confirmed) return;
+
+    setIsDeletingAll(true);
+    setError(null);
+    let successCount = 0;
+    let failCount = 0;
+
+    // Collect info about deleted events and their attendees
+    const deletedEventInfos: Array<{
+      title: string;
+      date: string;
+      isAllDay: boolean;
+    }> = [];
+    const allAttendees = new Set<string>();
+
+    for (const event of calendarEvents) {
+      try {
+        // Delete WITHOUT sending individual notifications
+        const response = await fetch(
+          `/api/calendar/events/${event.id}?access_token=${encodeURIComponent(session.accessToken)}&send_notifications=false`,
+          { method: 'DELETE' }
+        );
+        const result = await response.json();
+        if (result.success) {
+          successCount++;
+
+          // Collect event info for cancellation email
+          deletedEventInfos.push({
+            title: event.title,
+            date: event.start,
+            isAllDay: event.isAllDay
+          });
+
+          // Collect attendees
+          event.attendees.forEach(email => allAttendees.add(email));
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+
+    // Send ONE cancellation summary email if there are attendees
+    const attendeesList = Array.from(allAttendees).filter(email => email !== session.email);
+    if (attendeesList.length > 0 && deletedEventInfos.length > 0) {
+      try {
+        await fetch('/api/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: session.accessToken,
+            senderEmail: session.email,
+            recipients: attendeesList,
+            events: deletedEventInfos,
+            emailType: 'cancellation'
+          }),
+        });
+      } catch (emailError) {
+        console.error('Failed to send cancellation email:', emailError);
+        // Don't fail if email fails
+      }
+    }
+
+    // Reload events to get fresh state
+    await loadCalendarEvents();
+
+    if (successCount > 0) {
+      const emailSentMsg = attendeesList.length > 0 && deletedEventInfos.length > 0
+        ? ' Cancellation email sent!'
+        : '';
+      setSuccess(
+        `Deleted ${successCount} event${successCount !== 1 ? 's' : ''} successfully!${failCount > 0 ? ` (${failCount} failed)` : ''}${emailSentMsg}`
+      );
+    }
+    if (failCount > 0 && successCount === 0) {
+      setError(`Failed to delete events. Please try again.`);
+    }
+
+    setIsDeletingAll(false);
   };
 
   const openEditModal = (event: CalendarEventItem) => {
@@ -491,6 +616,7 @@ export default function Home() {
       (item as CalendarEvent).attendees = [...(item.attendees || []), ...recipients];
     }
     try {
+      // Create event WITHOUT sending notifications (we'll send summary email instead)
       const response = await fetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -498,11 +624,49 @@ export default function Home() {
           accessToken: session.accessToken,
           calendarItem: item,
           attendees: recipients,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          sendNotifications: recipients.length === 0 // Only auto-send if no recipients (for self)
         }),
       });
       const result: CalendarCreateResponse = await response.json();
       if (result.success) {
+        // If there are recipients, send a summary email
+        let emailSent = false;
+        if (recipients.length > 0) {
+          const eventInfo = {
+            title: item.title,
+            date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
+            time: item.type === 'event'
+              ? new Date((item as CalendarEvent).startDateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+              : undefined,
+            link: result.eventLink,
+            isAllDay: item.type === 'task'
+          };
+
+          console.log('Sending summary email for single event:', { eventInfo, recipients, senderEmail: session.email });
+
+          try {
+            const emailResponse = await fetch('/api/email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                accessToken: session.accessToken,
+                senderEmail: session.email,
+                recipients: recipients,
+                events: [eventInfo]
+              }),
+            });
+            const emailResult = await emailResponse.json();
+            console.log('Email API response:', emailResult);
+            emailSent = emailResult.success;
+            if (!emailResult.success) {
+              console.error('Email sending failed:', emailResult.error);
+            }
+          } catch (emailError) {
+            console.error('Failed to send summary email:', emailError);
+          }
+        }
+
         const newItems = parsedItems.filter((_, i) => i !== index);
         setParsedItems(newItems);
         const newSelected = new Set<number>();
@@ -511,7 +675,7 @@ export default function Home() {
           else if (i > index) newSelected.add(i - 1);
         });
         setSelectedItems(newSelected);
-        setSuccess(`Created "${parsedItems[index].title}" successfully!`);
+        setSuccess(`Created "${parsedItems[index].title}" successfully!${emailSent ? ' Summary email sent.' : (recipients.length > 0 ? ' (Email failed)' : '')}`);
       } else {
         setError(result.error || 'Failed to create event');
       }
@@ -530,12 +694,21 @@ export default function Home() {
     let successCount = 0;
     let failCount = 0;
     const createdIndices: number[] = [];
+    const createdEventInfos: Array<{
+      title: string;
+      date: string;
+      time?: string;
+      link?: string;
+      isAllDay: boolean;
+    }> = [];
+
     for (const index of Array.from(selectedItems).sort((a, b) => b - a)) {
       const item = { ...parsedItems[index] };
       if (recipients.length > 0 && item.type === 'event') {
         (item as CalendarEvent).attendees = [...(item.attendees || []), ...recipients];
       }
       try {
+        // Create event WITHOUT sending notifications
         const response = await fetch('/api/calendar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -543,23 +716,66 @@ export default function Home() {
             accessToken: session.accessToken,
             calendarItem: item,
             attendees: recipients,
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            sendNotifications: recipients.length === 0 // Only auto-send if no recipients
           }),
         });
         const result: CalendarCreateResponse = await response.json();
         if (result.success) {
           successCount++;
           createdIndices.push(index);
+
+          // Collect event info for summary email
+          if (recipients.length > 0) {
+            createdEventInfos.push({
+              title: item.title,
+              date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
+              time: item.type === 'event'
+                ? new Date((item as CalendarEvent).startDateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+                : undefined,
+              link: result.eventLink,
+              isAllDay: item.type === 'task'
+            });
+          }
         } else failCount++;
       } catch {
         failCount++;
       }
     }
+
+    // Send ONE summary email with all created events
+    let emailSent = false;
+    if (recipients.length > 0 && createdEventInfos.length > 0) {
+      console.log('Sending summary email for multiple events:', { eventCount: createdEventInfos.length, recipients, senderEmail: session.email });
+      try {
+        const emailResponse = await fetch('/api/email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken: session.accessToken,
+            senderEmail: session.email,
+            recipients: recipients,
+            events: createdEventInfos
+          }),
+        });
+        const emailResult = await emailResponse.json();
+        console.log('Email API response:', emailResult);
+        emailSent = emailResult.success;
+        if (!emailResult.success) {
+          console.error('Email sending failed:', emailResult.error);
+        }
+      } catch (emailError) {
+        console.error('Failed to send summary email:', emailError);
+        // Don't fail the whole operation if email fails
+      }
+    }
+
     const newItems = parsedItems.filter((_, i) => !createdIndices.includes(i));
     setParsedItems(newItems);
     setSelectedItems(new Set());
     if (successCount > 0) {
-      setSuccess(`Created ${successCount} item${successCount > 1 ? 's' : ''}!${failCount > 0 ? ` (${failCount} failed)` : ''}`);
+      const emailSentMsg = emailSent ? ' Summary email sent!' : (recipients.length > 0 && createdEventInfos.length > 0 ? ' (Email failed)' : '');
+      setSuccess(`Created ${successCount} item${successCount > 1 ? 's' : ''}!${failCount > 0 ? ` (${failCount} failed)` : ''}${emailSentMsg}`);
     }
     if (failCount > 0 && successCount === 0) setError(`Failed to create ${failCount} item${failCount > 1 ? 's' : ''}.`);
     if (newItems.length === 0) setInput('');
@@ -1564,7 +1780,7 @@ export default function Home() {
                 <span className="text-sm text-white/60 hidden sm:block">{session.email}</span>
                 <button
                   onClick={handleDisconnect}
-                  className="px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xsgt font-semibold rounded-full transition-all border border-white/20"
+                  className="px-3 sm:px-4 py-3 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xsgt font-semibold rounded-full transition-all border border-white/20"
                 >
                   Sign Out
                 </button>
@@ -1573,7 +1789,7 @@ export default function Home() {
               <button
                 onClick={handleConnectGoogle}
                 disabled={isConnecting}
-                className={`${isMobileView ? 'h-[36px] w-[80px]' : 'h-[36px] w-[100px]'}  px-3 sm:px-4 py-1.5 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20 disabled:opacity-50`}
+                className={`${isMobileView ? 'h-[36px] w-[80px]' : 'h-[36px] w-[100px]'}  px-3 sm:px-4 py-3 sm:py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] sm:text-xs font-semibold rounded-full transition-all border border-white/20 disabled:opacity-50`}
               >
                 {isConnecting ? '...' : 'Sign In'}
               </button>
@@ -1622,11 +1838,11 @@ export default function Home() {
 
           {/* Pure Red Background */}
           <div className="hero-bg"></div>
-          <Snowfall
+          {/* <Snowfall
             // Controls the number of snowflakes that are created (default 150)
             snowflakeCount={200}
 
-          ></Snowfall>
+          ></Snowfall> */}
           {/* Massive Title - At bottom */}
           <div className="hero-title-container">
             <p className="hero-subtitle mb-4">
@@ -1805,7 +2021,7 @@ PEF3
                         <div className="flex items-center gap-2">
                           <button
                             onClick={goToToday}
-                            className="px-3 py-1.5 text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                            className="px-3 py-3 text-sm font-medium text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-all"
                           >
                             Today
                           </button>
@@ -1846,7 +2062,7 @@ PEF3
                       <div className="flex bg-white/10 rounded-lg p-1">
                         <button
                           onClick={() => setViewMode('list')}
-                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'list'
+                          className={`px-3 py-3 text-sm font-medium rounded-md transition-all ${viewMode === 'list'
                             ? 'bg-white/20 text-white'
                             : 'text-white/60 hover:text-white'
                             }`}
@@ -1862,7 +2078,7 @@ PEF3
                         </button>
                         <button
                           onClick={() => setViewMode('calendar')}
-                          className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${viewMode === 'calendar'
+                          className={`px-3 py-3 text-sm font-medium rounded-md transition-all ${viewMode === 'calendar'
                             ? 'bg-white/20 text-white'
                             : 'text-white/60 hover:text-white'
                             }`}
@@ -1877,11 +2093,32 @@ PEF3
                       </div>
 
                       {/* Refresh button */}
-                      <button onClick={loadCalendarEvents} disabled={isLoadingEvents} className="icon-btn-glass">
+                      <button onClick={loadCalendarEvents} disabled={isLoadingEvents || isDeletingAll} className="icon-btn-glass">
                         <svg className={`w-4 h-4 ${isLoadingEvents ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                           <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                       </button>
+
+                      {/* Delete All button */}
+                      {calendarEvents.length > 0 && (
+                        <button
+                          onClick={handleDeleteAllEvents}
+                          disabled={isDeletingAll || isLoadingEvents}
+                          className="icon-btn-glass hover:!bg-red-500/20 hover:!border-red-400/30"
+                          title="Delete all events"
+                        >
+                          {isDeletingAll ? (
+                            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2470,7 +2707,7 @@ PEF3
             <div className="flex items-center justify-between mb-6 pb-5 border-b border-white/20">
               <div className="flex items-center gap-4">
                 <span className="font-bold text-white text-lg">{parsedItems.length} items found</span>
-                <span className="px-3 py-1.5 bg-white/20 text-white text-xs font-semibold rounded-full">{selectedItems.size} selected</span>
+                <span className="px-3 py-3 bg-white/20 text-white text-xs font-semibold rounded-full">{selectedItems.size} selected</span>
               </div>
               <div className="flex items-center gap-6">
                 <button onClick={selectAll} className="text-white/70 hover:text-white text-sm font-medium transition-colors">Select all</button>

@@ -3,26 +3,17 @@ import { CalendarItem, AIParseResponse } from '../types/calendar';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-const SYSTEM_PROMPT = `You are a calendar assistant that parses natural language input into structured calendar events or tasks.
+const SYSTEM_PROMPT = `You are a calendar assistant that parses natural language input into structured calendar TASKS.
 
 The user may provide:
-- A single event or task
-- MULTIPLE events/tasks in a list format (with bullet points, dashes, numbers, or line breaks)
+- A single task
+- MULTIPLE tasks in a list format (with bullet points, dashes, numbers, or line breaks)
 - A class/course name followed by multiple items
 
-Analyze the user's input and extract ALL events and tasks mentioned.
+Analyze the user's input and extract ALL items as TASKS.
 
-For EVENTS (meetings, appointments, activities with specific time):
-- type: "event"
-- title: The name/title of the event (include the course/class name if provided as context)
-- description: Any additional details (optional)
-- startDateTime: Start date and time in ISO 8601 format (e.g., "2025-12-15T10:00:00")
-- endDateTime: End date and time in ISO 8601 format (default to 1 hour after start if not specified)
-- location: Where the event takes place (optional)
-- attendees: Array of email addresses if mentioned (optional)
-
-For TASKS (to-do items, reminders, deadlines, submissions):
-- type: "task"
+For ALL items, create TASKS with:
+- type: "task" (ALWAYS use "task", never "event")
 - title: The task name (include the course/class name if provided as context)
 - description: Any additional details (optional)
 - dueDate: Due date in ISO 8601 format (e.g., "2025-12-15")
@@ -30,36 +21,24 @@ For TASKS (to-do items, reminders, deadlines, submissions):
 
 IMPORTANT RULES:
 1. Use the current date context provided to calculate relative dates like "tomorrow", "next week", etc.
-2. If no specific time is mentioned for an event, default to 9:00 AM
-3. If no duration is specified, default to 1 hour for events
-4. Return ONLY valid JSON, no markdown, no explanation
-5. ALWAYS return a JSON ARRAY, even for a single item
-6. If a course/class name is mentioned at the top (like "PEF3", "MATH101", etc.), prepend it to each item's title
-7. Parse ALL items in the list - do not skip any
-8. "Submit" or "submission" items with deadlines should be tasks
-9. "Performance", "presentation", "meeting" items with specific dates/times should be events
-10. Items with "until" or "by" deadlines are tasks
-11. Items with "on" specific dates are usually events
+2. ALL items should be created as TASKS, not events
+3. Return ONLY valid JSON, no markdown, no explanation
+4. ALWAYS return a JSON ARRAY, even for a single item
+5. If a course/class name is mentioned at the top (like "PEF3", "MATH101", etc.), prepend it to each item's title
+6. Parse ALL items in the list - do not skip any
+7. Meetings, performances, presentations, etc. should all be tasks with the date as the dueDate
+8. If no date is mentioned, use the current date
 
 CURRENT DATE CONTEXT: {{CURRENT_DATE}}
 
-Return your response as a valid JSON ARRAY of objects. Each object matches one of these structures:
+Return your response as a valid JSON ARRAY of objects. Each object MUST have this structure:
 
 [
-  {
-    "type": "event",
-    "title": "Course Name - Event Title",
-    "description": "string or null",
-    "startDateTime": "ISO 8601 string",
-    "endDateTime": "ISO 8601 string",
-    "location": "string or null",
-    "attendees": ["email@example.com"] or null
-  },
   {
     "type": "task",
     "title": "Course Name - Task Title",
     "description": "string or null",
-    "dueDate": "ISO 8601 date string",
+    "dueDate": "ISO 8601 date string (YYYY-MM-DD)",
     "priority": "low" | "medium" | "high"
   }
 ]
@@ -76,9 +55,9 @@ Example output:
 [
   {"type": "task", "title": "PEF3 - Final Requirement: Practice Assessment - Submit Video", "dueDate": "2025-12-12", "priority": "high"},
   {"type": "task", "title": "PEF3 - MyClass Course Evaluation", "dueDate": "2025-12-12", "priority": "medium"},
-  {"type": "event", "title": "PEF3 - Practice", "startDateTime": "2025-12-12T09:00:00", "endDateTime": "2025-12-12T10:00:00"},
-  {"type": "event", "title": "PEF3 - Non-main Performers Performance", "startDateTime": "2025-12-12T09:00:00", "endDateTime": "2025-12-12T10:00:00"},
-  {"type": "event", "title": "PEF3 - Main Performers Performance", "startDateTime": "2025-12-12T09:00:00", "endDateTime": "2025-12-12T10:00:00"}
+  {"type": "task", "title": "PEF3 - Practice", "dueDate": "2025-12-12", "priority": "medium"},
+  {"type": "task", "title": "PEF3 - Non-main Performers Performance", "dueDate": "2025-12-12", "priority": "medium"},
+  {"type": "task", "title": "PEF3 - Main Performers Performance", "dueDate": "2025-12-12", "priority": "medium"}
 ]`;
 
 export async function parseInputWithAI(input: string, timezone?: string): Promise<AIParseResponse> {
@@ -108,7 +87,7 @@ export async function parseInputWithAI(input: string, timezone?: string): Promis
                 },
                 {
                     role: 'model',
-                    parts: [{ text: 'I understand. I will parse natural language input into structured calendar events or tasks and return only valid JSON arrays. I will extract ALL items from the input, including multiple items in lists, and prepend course/class names to titles when provided. Please provide the input to parse.' }],
+                    parts: [{ text: 'I understand. I will parse natural language input into structured calendar TASKS only (never events) and return only valid JSON arrays. I will extract ALL items from the input as tasks, including multiple items in lists, and prepend course/class names to titles when provided. Please provide the input to parse.' }],
                 },
             ],
         });

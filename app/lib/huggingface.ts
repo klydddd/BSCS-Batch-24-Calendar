@@ -93,7 +93,7 @@ export async function parseScheduleImage(
         // Use Qwen2-VL for vision-language understanding
         // This model is good at OCR and structured data extraction
         const response = await hf.chatCompletion({
-            model: 'Qwen/Qwen3-VL-235B-A22B-Instruct',
+            model: 'Qwen/Qwen2.5-VL-72B-Instruct',
             messages: [
                 {
                     role: 'user',
