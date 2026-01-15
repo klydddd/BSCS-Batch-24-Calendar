@@ -61,6 +61,7 @@ export default function Home() {
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [showReauthPopup, setShowReauthPopup] = useState(false);
   const [eventSearchQuery, setEventSearchQuery] = useState('');
 
   // Edit modal state
@@ -178,12 +179,16 @@ export default function Home() {
     const expiresAt = params.get('expires_at');
     const errorParam = params.get('error');
 
+    // Current permission version - increment this when adding new OAuth scopes
+    const CURRENT_PERMISSION_VERSION = 2; // v2 = Gmail API added
+
     if (errorParam) {
       setError(decodeURIComponent(errorParam));
       window.history.replaceState({}, '', '/');
     }
 
     if (accessToken && email) {
+      // Fresh login - user just authenticated, so they have latest permissions
       const newSession: UserSession = {
         email,
         accessToken,
@@ -192,6 +197,8 @@ export default function Home() {
       };
       setSession(newSession);
       localStorage.setItem('calendarSession', JSON.stringify(newSession));
+      // Mark that this user has the latest permissions
+      localStorage.setItem('permissionVersion', String(CURRENT_PERMISSION_VERSION));
       window.history.replaceState({}, '', '/');
     } else {
       const stored = localStorage.getItem('calendarSession');
@@ -200,6 +207,12 @@ export default function Home() {
           const parsed = JSON.parse(stored);
           if (parsed.expiresAt && parsed.expiresAt > Date.now()) {
             setSession(parsed);
+
+            // Check if user needs to re-authenticate for new permissions
+            const storedVersion = parseInt(localStorage.getItem('permissionVersion') || '1');
+            if (storedVersion < CURRENT_PERMISSION_VERSION) {
+              setShowReauthPopup(true);
+            }
           } else {
             localStorage.removeItem('calendarSession');
           }
@@ -3686,6 +3699,65 @@ PEF3
           </div>
         )
       }
+
+      {/* Re-authentication Required Popup */}
+      {showReauthPopup && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center">
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Hi friends!</h3>
+              <p className="text-white/70 text-sm">
+                I&apos;ve added new features that require additional permissions to send summary emails.
+              </p>
+            </div>
+
+            <div className="bg-white/5 rounded-lg p-4 mb-6">
+              <h4 className="text-white font-semibold text-sm mb-2">What&apos;s new:</h4>
+              <ul className="text-white/70 text-sm space-y-2">
+                <li className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Send ONE summary email instead of multiple calendar invites</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Send consolidated cancellation notifications</span>
+                </li>
+              </ul>
+            </div>
+
+            <p className="text-white/60 text-xs text-center mb-4">
+              Please log out and log back in to grant the new permissions. Thank you and God bless! Your most handsome classmate, Klyde!
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowReauthPopup(false)}
+                className="flex-1 py-2.5 px-4 rounded-lg border border-white/20 text-white/70 hover:bg-white/10 transition-all text-sm font-medium"
+              >
+                Later
+              </button>
+              <button
+                onClick={() => {
+                  handleDisconnect();
+                  setShowReauthPopup(false);
+                }}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-red-500 to-rose-600 text-white hover:from-red-600 hover:to-rose-700 transition-all text-sm font-semibold"
+              >
+                Log Out Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Footer with Privacy & Terms Links */}
       <footer className="fixed bottom-0 left-0 right-0 z-40 px-6 py-3 bg-linear-to-t from-red-900/80 to-transparent pointer-events-none">
