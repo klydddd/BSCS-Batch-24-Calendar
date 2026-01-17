@@ -101,6 +101,10 @@ export default function Home() {
   const [dragStart, setDragStart] = useState<{ day: string; timeIndex: number } | null>(null);
   const [dragEnd, setDragEnd] = useState<{ day: string; timeIndex: number } | null>(null);
 
+  // Drag-and-drop state for moving schedule entries
+  const [draggedEntry, setDraggedEntry] = useState<ScheduleEntry | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ day: string; timeIndex: number } | null>(null);
+
   // Mobile schedule view state
   const [selectedMobileDay, setSelectedMobileDay] = useState('Monday');
   const [isMobileView, setIsMobileView] = useState(false);
@@ -1122,6 +1126,62 @@ export default function Home() {
     const updatedEntries = scheduleEntries.filter(e => e.id !== id);
     setScheduleEntries(updatedEntries);
     localStorage.setItem('classSchedule', JSON.stringify(updatedEntries));
+  };
+
+  // Handle dropping a schedule entry to a new time slot
+  const handleDropScheduleEntry = (targetDay: string, targetTimeIndex: number) => {
+    if (!draggedEntry) return;
+
+    // Calculate the duration of the entry in minutes
+    const originalStartMins = parseInt(draggedEntry.startTime.split(':')[0]) * 60 + parseInt(draggedEntry.startTime.split(':')[1]);
+    const originalEndMins = parseInt(draggedEntry.endTime.split(':')[0]) * 60 + parseInt(draggedEntry.endTime.split(':')[1]);
+    const durationMins = originalEndMins - originalStartMins;
+
+    // Calculate new start and end times based on target slot
+    const targetTime = TIME_SLOTS[targetTimeIndex];
+    const newStartMins = parseInt(targetTime.split(':')[0]) * 60 + parseInt(targetTime.split(':')[1]);
+    const newEndMins = newStartMins + durationMins;
+
+    // Format new times
+    const newStartTime = `${Math.floor(newStartMins / 60).toString().padStart(2, '0')}:${(newStartMins % 60).toString().padStart(2, '0')}`;
+    const newEndTime = `${Math.floor(newEndMins / 60).toString().padStart(2, '0')}:${(newEndMins % 60).toString().padStart(2, '0')}`;
+
+    // Check if the new end time exceeds the schedule bounds (19:00 = 1140 minutes, but allow up to 20:00 = 1200)
+    if (newEndMins > 20 * 60) {
+      setDraggedEntry(null);
+      setDropTarget(null);
+      return;
+    }
+
+    // Check for conflicts with other entries (excluding the dragged entry itself)
+    const hasConflict = scheduleEntries.some(entry => {
+      if (entry.id === draggedEntry.id) return false;
+      if (entry.day !== targetDay) return false;
+
+      const entryStartMins = parseInt(entry.startTime.split(':')[0]) * 60 + parseInt(entry.startTime.split(':')[1]);
+      const entryEndMins = parseInt(entry.endTime.split(':')[0]) * 60 + parseInt(entry.endTime.split(':')[1]);
+
+      // Check for overlap
+      return (newStartMins < entryEndMins && newEndMins > entryStartMins);
+    });
+
+    if (hasConflict) {
+      setDraggedEntry(null);
+      setDropTarget(null);
+      return;
+    }
+
+    // Update the entry with new day and times
+    const updatedEntries = scheduleEntries.map(entry =>
+      entry.id === draggedEntry.id
+        ? { ...entry, day: targetDay, startTime: newStartTime, endTime: newEndTime }
+        : entry
+    );
+
+    setScheduleEntries(updatedEntries);
+    localStorage.setItem('classSchedule', JSON.stringify(updatedEntries));
+    setDraggedEntry(null);
+    setDropTarget(null);
   };
 
   // Drag selection handlers
@@ -2389,10 +2449,20 @@ PEF3
                   </div>
                 )}
 
-                {/* Drag hint */}
+                {/* Drag hint for selecting new time range */}
                 {isDragging && dragStart && dragEnd && (
                   <div className="text-center text-xs text-white/70 py-2 mb-2 bg-blue-500/20 rounded-lg animate-pulse">
                     📌 {formatTimeLabel(TIME_SLOTS[Math.min(dragStart.timeIndex, dragEnd.timeIndex)])} - {formatTimeLabel(TIME_SLOTS[Math.max(dragStart.timeIndex, dragEnd.timeIndex) + 1] || '19:00')}
+                  </div>
+                )}
+
+                {/* Drag hint for moving schedule entry */}
+                {draggedEntry && (
+                  <div className="text-center text-xs text-white/70 py-2 mb-2 bg-green-500/20 rounded-lg flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4 animate-bounce" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                    </svg>
+                    Moving <span className="font-semibold">&quot;{draggedEntry.subject}&quot;</span> — Drop on an empty time slot
                   </div>
                 )}
 
@@ -2455,18 +2525,34 @@ PEF3
 
                                 if (entry && isStart) {
                                   const span = getSlotSpan(entry);
+                                  const isDraggingThis = draggedEntry?.id === entry.id;
                                   return (
                                     <div
                                       key={`${day}-${time}`}
                                       role="button"
                                       tabIndex={0}
-                                      onClick={() => openEditScheduleModal(entry)}
+                                      draggable
+                                      onClick={() => {
+                                        if (!draggedEntry) {
+                                          openEditScheduleModal(entry);
+                                        }
+                                      }}
                                       onKeyDown={(e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
                                           openEditScheduleModal(entry);
                                         }
                                       }}
-                                      className="relative p-1.5 rounded-lg text-left transition-all hover:opacity-80 group cursor-pointer"
+                                      onDragStart={(e) => {
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        e.dataTransfer.setData('text/plain', entry.id);
+                                        setDraggedEntry(entry);
+                                      }}
+                                      onDragEnd={() => {
+                                        setDraggedEntry(null);
+                                        setDropTarget(null);
+                                      }}
+                                      className={`relative p-1.5 rounded-lg text-left transition-all group cursor-grab active:cursor-grabbing ${isDraggingThis ? 'opacity-50 scale-95' : 'hover:opacity-80'
+                                        }`}
                                       style={{
                                         gridColumn: dayIndex + 2,
                                         gridRow: `${timeIndex + 2} / span ${span}`,
@@ -2474,13 +2560,28 @@ PEF3
                                         borderLeft: `3px solid ${entry.color}`,
                                       }}
                                     >
-                                      <p className="text-[10px] font-semibold text-white truncate">{entry.subject}</p>
-                                      {entry.room && (
-                                        <p className="text-[9px] text-white/60 truncate">{entry.room}</p>
-                                      )}
-                                      <p className="text-[9px] text-white/50 mt-0.5">
-                                        {formatTimeLabel(entry.startTime)} - {formatTimeLabel(entry.endTime)}
-                                      </p>
+                                      <div className="flex items-start justify-between">
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-[10px] font-semibold text-white truncate">{entry.subject}</p>
+                                          {entry.room && (
+                                            <p className="text-[9px] text-white/60 truncate">{entry.room}</p>
+                                          )}
+                                          <p className="text-[9px] text-white/50 mt-0.5">
+                                            {formatTimeLabel(entry.startTime)} - {formatTimeLabel(entry.endTime)}
+                                          </p>
+                                        </div>
+                                        {/* Drag handle indicator */}
+                                        <div className="opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0 ml-1">
+                                          <svg className="w-3 h-3 text-white/60" viewBox="0 0 24 24" fill="currentColor">
+                                            <circle cx="9" cy="5" r="1.5" />
+                                            <circle cx="15" cy="5" r="1.5" />
+                                            <circle cx="9" cy="12" r="1.5" />
+                                            <circle cx="15" cy="12" r="1.5" />
+                                            <circle cx="9" cy="19" r="1.5" />
+                                            <circle cx="15" cy="19" r="1.5" />
+                                          </svg>
+                                        </div>
+                                      </div>
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -2498,36 +2599,65 @@ PEF3
                                   );
                                 }
 
-                                // Empty cell
+                                // Empty cell - acts as drop target
                                 const isSelected = isInDragRange(day, timeIndex);
+                                const isDropTarget = dropTarget?.day === day && dropTarget?.timeIndex === timeIndex;
                                 return (
                                   <div
                                     key={`${day}-${time}`}
                                     data-day={day}
                                     data-time-index={timeIndex}
                                     onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      handleDragStart(day, timeIndex);
-                                    }}
-                                    onMouseEnter={() => handleDragMove(day, timeIndex)}
-                                    onTouchStart={(e) => {
-                                      e.preventDefault();
-                                      handleDragStart(day, timeIndex);
-                                    }}
-                                    onTouchMove={(e) => {
-                                      const touch = e.touches[0];
-                                      const element = document.elementFromPoint(touch.clientX, touch.clientY);
-                                      const targetDay = element?.getAttribute('data-day');
-                                      const targetTimeIndex = element?.getAttribute('data-time-index');
-                                      if (targetDay && targetTimeIndex) {
-                                        handleDragMove(targetDay, parseInt(targetTimeIndex));
+                                      if (!draggedEntry) {
+                                        e.preventDefault();
+                                        handleDragStart(day, timeIndex);
                                       }
                                     }}
-                                    className={`p-1 rounded transition-all cursor-pointer touch-none ${isSelected
-                                      ? 'bg-blue-500/40 border border-blue-400/60'
-                                      : time.endsWith(':00')
-                                        ? 'bg-white/5 hover:bg-white/20'
-                                        : 'bg-white/[0.02] hover:bg-white/20'
+                                    onMouseEnter={() => {
+                                      if (!draggedEntry) {
+                                        handleDragMove(day, timeIndex);
+                                      }
+                                    }}
+                                    onTouchStart={(e) => {
+                                      if (!draggedEntry) {
+                                        e.preventDefault();
+                                        handleDragStart(day, timeIndex);
+                                      }
+                                    }}
+                                    onTouchMove={(e) => {
+                                      if (!draggedEntry) {
+                                        const touch = e.touches[0];
+                                        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                                        const targetDay = element?.getAttribute('data-day');
+                                        const targetTimeIndex = element?.getAttribute('data-time-index');
+                                        if (targetDay && targetTimeIndex) {
+                                          handleDragMove(targetDay, parseInt(targetTimeIndex));
+                                        }
+                                      }
+                                    }}
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      e.dataTransfer.dropEffect = 'move';
+                                      setDropTarget({ day, timeIndex });
+                                    }}
+                                    onDragLeave={() => {
+                                      if (dropTarget?.day === day && dropTarget?.timeIndex === timeIndex) {
+                                        setDropTarget(null);
+                                      }
+                                    }}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      handleDropScheduleEntry(day, timeIndex);
+                                    }}
+                                    className={`p-1 rounded transition-all touch-none ${isDropTarget && draggedEntry
+                                      ? 'bg-green-500/40 border-2 border-dashed border-green-400/60 scale-105'
+                                      : isSelected
+                                        ? 'bg-blue-500/40 border border-blue-400/60'
+                                        : draggedEntry
+                                          ? 'bg-white/10 hover:bg-green-500/30 cursor-copy'
+                                          : time.endsWith(':00')
+                                            ? 'bg-white/5 hover:bg-white/20 cursor-pointer'
+                                            : 'bg-white/[0.02] hover:bg-white/20 cursor-pointer'
                                       }`}
                                     style={{
                                       gridColumn: dayIndex + 2,
@@ -2608,6 +2738,7 @@ PEF3
 
                           if (entry && isStart) {
                             const span = getSlotSpan(entry);
+                            const isDraggingThis = draggedEntry?.id === entry.id;
                             return (
                               <div
                                 key={time}
@@ -2616,71 +2747,124 @@ PEF3
                                 <div className="w-14 text-[10px] text-white/60 text-right pt-2 flex-shrink-0">
                                   {formatTimeLabel(time)}
                                 </div>
-                                <button
-                                  onClick={() => openEditScheduleModal(entry)}
-                                  className="flex-1 relative p-2 rounded-xl text-left transition-all active:scale-[0.98]"
+                                <div
+                                  draggable
+                                  onClick={() => {
+                                    if (!draggedEntry) {
+                                      openEditScheduleModal(entry);
+                                    }
+                                  }}
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.effectAllowed = 'move';
+                                    e.dataTransfer.setData('text/plain', entry.id);
+                                    setDraggedEntry(entry);
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggedEntry(null);
+                                    setDropTarget(null);
+                                  }}
+                                  className={`flex-1 relative p-2 rounded-xl text-left transition-all cursor-grab active:cursor-grabbing ${isDraggingThis ? 'opacity-50 scale-95' : 'active:scale-[0.98]'
+                                    }`}
                                   style={{
                                     backgroundColor: `${entry.color}40`,
                                     borderLeft: `4px solid ${entry.color}`,
                                     minHeight: `${span * 44}px`
                                   }}
                                 >
-                                  <p className="text-sm font-semibold text-white">{entry.subject}</p>
-                                  {entry.room && (
-                                    <p className="text-xs text-white/60 flex items-center gap-1 mt-1">
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                        <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-semibold text-white">{entry.subject}</p>
+                                      {entry.room && (
+                                        <p className="text-xs text-white/60 flex items-center gap-1 mt-1">
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                            <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                          </svg>
+                                          {entry.room}
+                                        </p>
+                                      )}
+                                      <p className="text-xs text-white/70 mt-1">
+                                        {formatTimeLabel(entry.startTime)} - {formatTimeLabel(entry.endTime)}
+                                      </p>
+                                    </div>
+                                    {/* Drag handle indicator */}
+                                    <div className="opacity-60 flex-shrink-0 ml-2">
+                                      <svg className="w-4 h-4 text-white/60" viewBox="0 0 24 24" fill="currentColor">
+                                        <circle cx="9" cy="5" r="1.5" />
+                                        <circle cx="15" cy="5" r="1.5" />
+                                        <circle cx="9" cy="12" r="1.5" />
+                                        <circle cx="15" cy="12" r="1.5" />
+                                        <circle cx="9" cy="19" r="1.5" />
+                                        <circle cx="15" cy="19" r="1.5" />
                                       </svg>
-                                      {entry.room}
-                                    </p>
-                                  )}
-                                  <p className="text-xs text-white/70 mt-1">
-                                    {formatTimeLabel(entry.startTime)} - {formatTimeLabel(entry.endTime)}
-                                  </p>
-                                </button>
+                                    </div>
+                                  </div>
+                                </div>
                               </div>
                             );
                           }
 
-                          // Empty slot - Tap to add class
+                          // Empty slot - Tap to add class or drop target
+                          const isDropTarget = dropTarget?.day === selectedMobileDay && dropTarget?.timeIndex === timeIndex;
                           return (
                             <div
                               key={time}
                               className="flex gap-2"
                             >
-                              <div className="w-14 text-[10px] text-white/60 text-right pt-2 flex-shrink-0">
+                              <div className="w-14 text-[10px] text-white/60 text-right pt-2 shrink-0">
                                 {time.endsWith(':00') ? formatTimeLabel(time) : ''}
                               </div>
-                              <button
+                              <div
+                                data-day={selectedMobileDay}
+                                data-time-index={timeIndex}
                                 onClick={() => {
-                                  // Pre-fill with 1-hour duration
-                                  const startHour = parseInt(time.split(':')[0]);
-                                  const startMin = time.split(':')[1];
-                                  const endHour = Math.min(startHour + 1, 19);
-                                  const endTime = `${endHour.toString().padStart(2, '0')}:${startMin}`;
-                                  setScheduleForm({
-                                    subject: '',
-                                    subjectCode: '',
-                                    subjectName: '',
-                                    room: '',
-                                    day: selectedMobileDay,
-                                    startTime: time,
-                                    endTime: endTime,
-                                    color: '#3b82f6'
-                                  });
-                                  setEditingScheduleEntry(null);
-                                  setShowScheduleModal(true);
+                                  if (!draggedEntry) {
+                                    // Pre-fill with 1-hour duration
+                                    const startHour = parseInt(time.split(':')[0]);
+                                    const startMin = time.split(':')[1];
+                                    const endHour = Math.min(startHour + 1, 19);
+                                    const endTime = `${endHour.toString().padStart(2, '0')}:${startMin}`;
+                                    setScheduleForm({
+                                      subject: '',
+                                      subjectCode: '',
+                                      subjectName: '',
+                                      room: '',
+                                      day: selectedMobileDay,
+                                      startTime: time,
+                                      endTime: endTime,
+                                      color: '#3b82f6'
+                                    });
+                                    setEditingScheduleEntry(null);
+                                    setShowScheduleModal(true);
+                                  }
                                 }}
-                                className={`flex-1 p-3 rounded-xl transition-all text-left ${time.endsWith(':00')
-                                  ? 'bg-white/5 active:bg-white/20 active:scale-[0.98]'
-                                  : 'bg-white/[0.02] active:bg-white/20 active:scale-[0.98]'
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = 'move';
+                                  setDropTarget({ day: selectedMobileDay, timeIndex });
+                                }}
+                                onDragLeave={() => {
+                                  if (dropTarget?.day === selectedMobileDay && dropTarget?.timeIndex === timeIndex) {
+                                    setDropTarget(null);
+                                  }
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  handleDropScheduleEntry(selectedMobileDay, timeIndex);
+                                }}
+                                className={`flex-1 p-3 rounded-xl transition-all text-left ${isDropTarget && draggedEntry
+                                  ? 'bg-green-500/40 border-2 border-dashed border-green-400/60 scale-105'
+                                  : draggedEntry
+                                    ? 'bg-white/10 cursor-copy'
+                                    : time.endsWith(':00')
+                                      ? 'bg-white/5 active:bg-white/20 active:scale-[0.98]'
+                                      : 'bg-white/[0.02] active:bg-white/20 active:scale-[0.98]'
                                   }`}
                                 style={{ minHeight: '36px' }}
                               >
-                                {time.endsWith(':00')
+                                {time.endsWith(':00') && !draggedEntry && null
                                   // <span className="text-[9px] text-white/20">+ Tap to add</span>
                                 }
-                              </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -2695,13 +2879,18 @@ PEF3
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
                     </svg>
-                    Click &amp; drag to select time range
+                    Click &amp; drag empty cells to select time range
                   </span>
                   <span className="flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path d="M12 4v16m8-8H4" />
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                      <circle cx="9" cy="6" r="1.5" />
+                      <circle cx="15" cy="6" r="1.5" />
+                      <circle cx="9" cy="12" r="1.5" />
+                      <circle cx="15" cy="12" r="1.5" />
+                      <circle cx="9" cy="18" r="1.5" />
+                      <circle cx="15" cy="18" r="1.5" />
                     </svg>
-                    Click a cell for single slot
+                    Drag classes to move them
                   </span>
                 </div>
 
