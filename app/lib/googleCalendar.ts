@@ -27,6 +27,7 @@ export function getAuthUrl(state?: string): string {
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/gmail.send', // For sending summary emails
+        'https://www.googleapis.com/auth/spreadsheets.readonly', // For reading Google Sheets (recipients import)
     ];
 
     // Debug: Log the redirect URI being used
@@ -659,3 +660,110 @@ export async function sendCancellationEmail(
         };
     }
 }
+
+// ============================================
+// Google Sheets Integration
+// ============================================
+
+export interface ReadSheetEmailsResponse {
+    success: boolean;
+    emails?: string[];
+    totalRows?: number;
+    error?: string;
+}
+
+/**
+ * Parse a Google Sheets URL to extract the spreadsheet ID
+ * Supports formats like:
+ * - https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+ * - https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=0
+ * - Just the spreadsheet ID directly
+ */
+export function parseSpreadsheetId(urlOrId: string): string | null {
+    // If it looks like a URL, extract the ID
+    const urlMatch = urlOrId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    if (urlMatch) {
+        return urlMatch[1];
+    }
+
+    // If it's just an ID (alphanumeric with dashes/underscores, typically 44 chars)
+    if (/^[a-zA-Z0-9-_]+$/.test(urlOrId) && urlOrId.length > 20) {
+        return urlOrId;
+    }
+
+    return null;
+}
+
+/**
+ * Read email addresses from a Google Sheet column
+ * @param accessToken - OAuth access token
+ * @param spreadsheetId - The Google Sheets spreadsheet ID
+ * @param range - The range to read (e.g., "A:A", "Sheet1!B2:B100", "A")
+ */
+export async function readSheetEmails(
+    accessToken: string,
+    spreadsheetId: string,
+    range: string
+): Promise<ReadSheetEmailsResponse> {
+    try {
+        oauth2Client.setCredentials({ access_token: accessToken });
+
+        const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+
+        // Normalize range - if just a column letter, expand to full column
+        let normalizedRange = range.trim();
+        if (/^[A-Za-z]$/.test(normalizedRange)) {
+            normalizedRange = `${normalizedRange}:${normalizedRange}`;
+        }
+
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: normalizedRange,
+        });
+
+        const rows = response.data.values || [];
+
+        // Extract emails from the data
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const emails: string[] = [];
+
+        for (const row of rows) {
+            if (row && row[0]) {
+                const value = String(row[0]).trim().toLowerCase();
+                if (emailRegex.test(value)) {
+                    emails.push(value);
+                }
+            }
+        }
+
+        return {
+            success: true,
+            emails,
+            totalRows: rows.length,
+        };
+    } catch (error: unknown) {
+        console.error('Error reading sheet emails:', error);
+
+        let errorMessage = 'Failed to read spreadsheet';
+        if (error && typeof error === 'object' && 'code' in error) {
+            const apiError = error as { code: number; message?: string };
+            if (apiError.code === 403) {
+                errorMessage = 'Permission denied. Make sure you have access to this spreadsheet and have granted Sheets permission.';
+            } else if (apiError.code === 404) {
+                errorMessage = 'Spreadsheet not found. Please check the URL and make sure the spreadsheet exists.';
+            } else if (apiError.code === 400) {
+                errorMessage = 'Invalid range specified. Try using a column letter like "A" or a range like "A2:A100".';
+            } else {
+                errorMessage = apiError.message || errorMessage;
+            }
+        } else if (error instanceof Error) {
+            errorMessage = error.message;
+        }
+
+        return {
+            success: false,
+            error: errorMessage,
+        };
+    }
+}
+

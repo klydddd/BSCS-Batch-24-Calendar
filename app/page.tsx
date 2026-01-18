@@ -57,6 +57,15 @@ export default function Home() {
   const [recipients, setRecipients] = useState<string[]>([]);
   const [recipientInput, setRecipientInput] = useState('');
 
+  // Google Sheets import modal state
+  const [showSheetsModal, setShowSheetsModal] = useState(false);
+  const [sheetsUrl, setSheetsUrl] = useState('');
+  const [sheetsColumn, setSheetsColumn] = useState('A');
+  const [sheetsEmails, setSheetsEmails] = useState<string[]>([]);
+  const [isLoadingSheets, setIsLoadingSheets] = useState(false);
+  const [sheetsError, setSheetsError] = useState<string | null>(null);
+
+
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventItem[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
@@ -184,7 +193,7 @@ export default function Home() {
     const errorParam = params.get('error');
 
     // Current permission version - increment this when adding new OAuth scopes
-    const CURRENT_PERMISSION_VERSION = 2; // v2 = Gmail API added
+    const CURRENT_PERMISSION_VERSION = 3; // v3 = Google Sheets API added
 
     if (errorParam) {
       setError(decodeURIComponent(errorParam));
@@ -582,6 +591,67 @@ export default function Home() {
   const getValidEmailCount = () => {
     return recipientInput.split(/[\s,;\n]+/).filter(e => e.trim() && isValidEmail(e.trim())).length;
   };
+
+  // Google Sheets import handlers
+  const handleFetchSheetsEmails = async () => {
+    if (!session || !sheetsUrl.trim()) return;
+
+    setIsLoadingSheets(true);
+    setSheetsError(null);
+    setSheetsEmails([]);
+
+    try {
+      const response = await fetch('/api/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accessToken: session.accessToken,
+          sheetUrl: sheetsUrl.trim(),
+          range: sheetsColumn.trim() || 'A',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success && result.emails) {
+        // Filter out emails already in recipients
+        const newEmails = result.emails.filter((email: string) => !recipients.includes(email));
+        setSheetsEmails(newEmails);
+
+        if (newEmails.length === 0 && result.emails.length > 0) {
+          setSheetsError('All emails from this sheet are already in your recipients list.');
+        } else if (result.emails.length === 0) {
+          setSheetsError(`No valid emails found in column ${sheetsColumn}. Found ${result.totalRows} rows total.`);
+        }
+      } else {
+        setSheetsError(result.error || 'Failed to read spreadsheet');
+      }
+    } catch {
+      setSheetsError('Failed to connect to Google Sheets. Please try again.');
+    } finally {
+      setIsLoadingSheets(false);
+    }
+  };
+
+  const handleImportSheetsEmails = () => {
+    if (sheetsEmails.length > 0) {
+      setRecipients([...recipients, ...sheetsEmails]);
+      setShowSheetsModal(false);
+      setSheetsUrl('');
+      setSheetsColumn('A');
+      setSheetsEmails([]);
+      setSheetsError(null);
+    }
+  };
+
+  const closeSheetsModal = () => {
+    setShowSheetsModal(false);
+    setSheetsUrl('');
+    setSheetsColumn('A');
+    setSheetsEmails([]);
+    setSheetsError(null);
+  };
+
 
   const handleParseInput = async (e: FormEvent) => {
     e.preventDefault();
@@ -1919,7 +1989,7 @@ export default function Home() {
           {/* Massive Title - At bottom */}
           <div className="hero-title-container">
             <p className="hero-subtitle mb-4">
-              BSCS Batch 2025 Exclusive Calendar Automation
+              BSCS Batch 2028 Exclusive Calendar Automation
             </p>
             <h1 className="hero-title">
               BSCS CALENDAR
@@ -1939,7 +2009,7 @@ export default function Home() {
                       </svg>
                       <div className="flex-1">
                         <h3 className="font-semibold text-white text-sm">Recipients</h3>
-                        <p className="text-xs text-white/50 mt-0.5">Add classmates</p>
+                        {/* <p className="text-xs text-white/50 mt-0.5">Add classmates</p> */}
                       </div>
                       {recipients.length > 0 && (
                         <span className="badge-glass">{recipients.length}</span>
@@ -1968,6 +2038,19 @@ export default function Home() {
                       <p className="text-xs text-white/60 mb-3">
                         <span className="text-white font-medium">{getValidEmailCount()}</span> valid email{getValidEmailCount() !== 1 ? 's' : ''} detected
                       </p>
+                    )}
+
+                    {/* Import from Google Sheets button */}
+                    {session && (
+                      <button
+                        onClick={() => setShowSheetsModal(true)}
+                        className="w-full mb-4 px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 rounded-lg text-xs text-white/80 hover:text-white transition-all flex items-center justify-center gap-2"
+                      >
+                        {/* <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                          <path d="M3 10h18M3 14h18M9 4v16M15 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
+                        </svg> */}
+                        Import from Google Sheets
+                      </button>
                     )}
 
                     {recipients.length > 0 ? (
@@ -3889,6 +3972,147 @@ PEF3
         )
       }
 
+      {/* Google Sheets Import Modal */}
+      {showSheetsModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <path d="M3 10h18M3 14h18M9 4v16M15 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Import from Google Sheets</h3>
+                  <p className="text-white/60 text-xs">Load emails from your spreadsheet</p>
+                </div>
+              </div>
+              <button
+                onClick={closeSheetsModal}
+                className="text-white/50 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Sheet URL Input */}
+              <div>
+                <label className="block text-white/80 text-sm font-medium mb-2">
+                  Google Sheets URL
+                </label>
+                <input
+                  type="text"
+                  value={sheetsUrl}
+                  onChange={(e) => setSheetsUrl(e.target.value)}
+                  placeholder="https://docs.google.com/spreadsheets/d/..."
+                  className="input-glass w-full text-sm"
+                  disabled={isLoadingSheets}
+                />
+              </div>
+
+              {/* Column Input */}
+              <div>
+                <label className="block text-white/80 text-sm font-medium mb-2">
+                  Column with emails
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={sheetsColumn}
+                    onChange={(e) => setSheetsColumn(e.target.value.toUpperCase())}
+                    placeholder="A"
+                    className="input-glass w-20 text-sm text-center"
+                    disabled={isLoadingSheets}
+                    maxLength={5}
+                  />
+                  <button
+                    onClick={handleFetchSheetsEmails}
+                    disabled={isLoadingSheets || !sheetsUrl.trim()}
+                    className="btn-glass flex-1"
+                  >
+                    {isLoadingSheets ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Loading...
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Find Emails
+                      </span>
+                    )}
+                  </button>
+                </div>
+                <p className="text-white/50 text-xs mt-1.5">
+                  Enter the column letter (e.g., A, B) or range (e.g., A2:A50)
+                </p>
+              </div>
+
+              {/* Error Message */}
+              {sheetsError && (
+                <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3">
+                  <p className="text-red-300 text-sm">{sheetsError}</p>
+                </div>
+              )}
+
+              {/* Preview Emails */}
+              {sheetsEmails.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-white/80 text-sm font-medium">
+                      Found {sheetsEmails.length} new email{sheetsEmails.length !== 1 ? 's' : ''}
+                    </label>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-3 max-h-40 overflow-y-auto">
+                    <div className="space-y-1.5">
+                      {sheetsEmails.slice(0, 20).map((email, index) => (
+                        <div key={index} className="flex items-center gap-2 text-white/80 text-sm">
+                          <svg className="w-3 h-3 text-green-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span className="truncate">{email}</span>
+                        </div>
+                      ))}
+                      {sheetsEmails.length > 20 && (
+                        <p className="text-white/50 text-xs pt-2">
+                          ...and {sheetsEmails.length - 20} more
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={closeSheetsModal}
+                className="flex-1 py-2.5 px-4 rounded-lg border border-white/20 text-white/70 hover:bg-white/10 transition-all text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleImportSheetsEmails}
+                disabled={sheetsEmails.length === 0}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Import {sheetsEmails.length > 0 ? `${sheetsEmails.length} Email${sheetsEmails.length !== 1 ? 's' : ''}` : 'Emails'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Re-authentication Required Popup */}
       {showReauthPopup && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -3901,7 +4125,7 @@ PEF3
               </div>
               <h3 className="text-xl font-bold text-white mb-2">Hi friends!</h3>
               <p className="text-white/70 text-sm">
-                I&apos;ve added new features that require additional permissions to send summary emails.
+                I&apos;ve added new features that require additional permissions.
               </p>
             </div>
 
@@ -3912,7 +4136,13 @@ PEF3
                   <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
-                  <span>Send ONE summary email instead of multiple calendar invites</span>
+                  <span>Import recipients from Google Sheets</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Send summary emails instead of multiple calendar invites</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
