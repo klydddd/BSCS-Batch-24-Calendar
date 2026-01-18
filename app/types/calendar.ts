@@ -22,6 +22,7 @@ export interface CalendarTask {
     dueDate: string; // ISO 8601 format (date only for all-day)
     priority?: 'low' | 'medium' | 'high';
     status?: 'needsAction' | 'completed';
+    colorId?: string; // Google Calendar color ID
 }
 
 export type CalendarItem = CalendarEvent | CalendarTask;

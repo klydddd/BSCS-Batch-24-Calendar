@@ -57,6 +57,42 @@ export async function getUserEmail(accessToken: string): Promise<string> {
     return data.email || '';
 }
 
+/**
+ * Determine the Google Calendar color ID based on task/event title
+ * Google Calendar Color IDs:
+ * - 11 = Red (Tomato) - for Quizzes/Exams
+ * - 5 = Yellow (Banana) - for Assignments/Homework
+ * - 9 = Blue (Blueberry) - for Projects
+ * - 10 = Green (Basil) - for Other Activities (default)
+ */
+export function getColorIdFromTitle(title: string): string {
+    const lowerTitle = title.toLowerCase();
+
+    // Quiz patterns
+    if (lowerTitle.includes('quiz') || lowerTitle.includes('exam') || lowerTitle.includes('test')) {
+        return '11'; // Red
+    }
+
+    // Assignment/Homework patterns
+    if (lowerTitle.includes('assignment') ||
+        lowerTitle.includes('homework') ||
+        lowerTitle.includes('hw') ||
+        lowerTitle.includes('activity') ||
+        lowerTitle.includes('exercise')) {
+        return '5'; // Yellow
+    }
+
+    // Project patterns
+    if (lowerTitle.includes('project') ||
+        lowerTitle.includes('group project') ||
+        lowerTitle.includes('final project') ||
+        lowerTitle.includes('capstone')) {
+        return '9'; // Blue
+    }
+
+    return '10'; // Green - Default for other activities
+}
+
 export async function createCalendarEvent(
     accessToken: string,
     event: CalendarEvent,
@@ -121,6 +157,9 @@ export async function createCalendarTask(
 
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+        // Determine color based on task title (or use provided colorId)
+        const colorId = task.colorId || getColorIdFromTitle(task.title);
+
         // Tasks are created as all-day events in Google Calendar
         // Include attendees so they receive invitations
         const taskResource: {
@@ -130,6 +169,7 @@ export async function createCalendarTask(
             end: { date: string };
             transparency: string;
             attendees?: { email: string }[];
+            colorId: string;
         } = {
             summary: `📋 ${task.title}`,
             description: `${task.description || ''}\n\nPriority: ${task.priority || 'medium'}`,
@@ -140,6 +180,7 @@ export async function createCalendarTask(
                 date: task.dueDate.split('T')[0],
             },
             transparency: 'transparent', // Doesn't block time
+            colorId, // Always apply color based on task type
         };
 
         // Add attendees if provided
