@@ -28,6 +28,7 @@ export function getAuthUrl(state?: string): string {
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/gmail.send', // For sending summary emails
         'https://www.googleapis.com/auth/spreadsheets.readonly', // For reading Google Sheets (recipients import)
+        'https://www.googleapis.com/auth/drive.readonly', // For listing user's spreadsheets
     ];
 
     // Debug: Log the redirect URI being used
@@ -808,3 +809,73 @@ export async function readSheetEmails(
     }
 }
 
+// ============================================
+// Google Drive Integration - List Spreadsheets
+// ============================================
+
+export interface SpreadsheetInfo {
+    id: string;
+    name: string;
+    modifiedTime?: string;
+    iconLink?: string;
+}
+
+export interface ListSpreadsheetsResponse {
+    success: boolean;
+    spreadsheets?: SpreadsheetInfo[];
+    error?: string;
+}
+
+/**
+ * List all Google Sheets accessible by the user
+ * Uses Google Drive API to find spreadsheet files
+ */
+export async function listUserSpreadsheets(
+    accessToken: string,
+    maxResults: number = 50
+): Promise<ListSpreadsheetsResponse> {
+    try {
+        oauth2Client.setCredentials({ access_token: accessToken });
+
+        const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+        // Query for Google Sheets files only
+        const response = await drive.files.list({
+            q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+            fields: 'files(id, name, modifiedTime, iconLink)',
+            orderBy: 'modifiedTime desc',
+            pageSize: maxResults,
+        });
+
+        const spreadsheets: SpreadsheetInfo[] = (response.data.files || []).map(file => ({
+            id: file.id || '',
+            name: file.name || 'Untitled',
+            modifiedTime: file.modifiedTime || undefined,
+            iconLink: file.iconLink || undefined,
+        }));
+
+        return {
+            success: true,
+            spreadsheets,
+        };
+    } catch (error: unknown) {
+        console.error('Error listing spreadsheets:', error);
+
+        let errorMessage = 'Failed to list spreadsheets';
+        if (error && typeof error === 'object' && 'code' in error) {
+            const apiError = error as { code: number; message?: string };
+            if (apiError.code === 403) {
+                errorMessage = 'Permission denied. Please log out and log back in to grant Drive access.';
+            } else {
+                errorMessage = apiError.message || errorMessage;
+            }
+        } else if (error instanceof Error) {
+            errorMessage = error.message;
+        }
+
+        return {
+            success: false,
+            error: errorMessage,
+        };
+    }
+}

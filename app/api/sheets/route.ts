@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { parseSpreadsheetId, readSheetEmails } from '../../lib/googleCalendar';
+import { parseSpreadsheetId, readSheetEmails, listUserSpreadsheets } from '../../lib/googleCalendar';
 
-export async function POST(request: NextRequest) {
+// GET - List user's spreadsheets
+export async function GET(request: NextRequest) {
     try {
-        const body = await request.json();
-        const { accessToken, sheetUrl, range } = body;
+        const accessToken = request.nextUrl.searchParams.get('access_token');
 
         if (!accessToken) {
             return NextResponse.json(
@@ -13,18 +13,50 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (!sheetUrl) {
+        const result = await listUserSpreadsheets(accessToken);
+
+        if (result.success) {
+            return NextResponse.json({
+                success: true,
+                spreadsheets: result.spreadsheets,
+            });
+        } else {
             return NextResponse.json(
-                { success: false, error: 'Sheet URL is required' },
+                { success: false, error: result.error },
                 { status: 400 }
             );
         }
+    } catch (error) {
+        console.error('Sheets list API error:', error);
+        return NextResponse.json(
+            { success: false, error: 'Failed to list spreadsheets' },
+            { status: 500 }
+        );
+    }
+}
 
-        // Parse the spreadsheet ID from the URL
-        const spreadsheetId = parseSpreadsheetId(sheetUrl);
+// POST - Read emails from a specific spreadsheet
+export async function POST(request: NextRequest) {
+    try {
+        const body = await request.json();
+        const { accessToken, sheetUrl, spreadsheetId: directId, range } = body;
+
+        if (!accessToken) {
+            return NextResponse.json(
+                { success: false, error: 'Not authenticated' },
+                { status: 401 }
+            );
+        }
+
+        // Accept either a direct spreadsheetId (from picker) or parse from URL
+        let spreadsheetId = directId;
+        if (!spreadsheetId && sheetUrl) {
+            spreadsheetId = parseSpreadsheetId(sheetUrl);
+        }
+
         if (!spreadsheetId) {
             return NextResponse.json(
-                { success: false, error: 'Invalid Google Sheets URL. Please paste the full URL from your browser.' },
+                { success: false, error: 'Please select a spreadsheet or paste a valid URL.' },
                 { status: 400 }
             );
         }

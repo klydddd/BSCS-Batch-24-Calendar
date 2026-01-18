@@ -64,6 +64,11 @@ export default function Home() {
   const [sheetsEmails, setSheetsEmails] = useState<string[]>([]);
   const [isLoadingSheets, setIsLoadingSheets] = useState(false);
   const [sheetsError, setSheetsError] = useState<string | null>(null);
+  // Spreadsheet picker state
+  const [availableSheets, setAvailableSheets] = useState<{ id: string; name: string; modifiedTime?: string }[]>([]);
+  const [selectedSheetId, setSelectedSheetId] = useState<string>('');
+  const [isLoadingSheetsList, setIsLoadingSheetsList] = useState(false);
+  const [sheetsInputMode, setSheetsInputMode] = useState<'picker' | 'url'>('picker');
 
 
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventItem[]>([]);
@@ -193,7 +198,7 @@ export default function Home() {
     const errorParam = params.get('error');
 
     // Current permission version - increment this when adding new OAuth scopes
-    const CURRENT_PERMISSION_VERSION = 3; // v3 = Google Sheets API added
+    const CURRENT_PERMISSION_VERSION = 4; // v4 = Google Drive API added for listing spreadsheets
 
     if (errorParam) {
       setError(decodeURIComponent(errorParam));
@@ -593,8 +598,43 @@ export default function Home() {
   };
 
   // Google Sheets import handlers
+  const fetchAvailableSheets = async () => {
+    if (!session) return;
+
+    setIsLoadingSheetsList(true);
+    setSheetsError(null);
+
+    try {
+      const response = await fetch(`/api/sheets?access_token=${encodeURIComponent(session.accessToken)}`);
+      const result = await response.json();
+
+      if (result.success && result.spreadsheets) {
+        setAvailableSheets(result.spreadsheets);
+        if (result.spreadsheets.length === 0) {
+          setSheetsError('No spreadsheets found in your Google Drive.');
+        }
+      } else {
+        setSheetsError(result.error || 'Failed to load spreadsheets');
+      }
+    } catch {
+      setSheetsError('Failed to load spreadsheets. Please try again.');
+    } finally {
+      setIsLoadingSheetsList(false);
+    }
+  };
+
   const handleFetchSheetsEmails = async () => {
-    if (!session || !sheetsUrl.trim()) return;
+    if (!session) return;
+
+    // Validate based on input mode
+    if (sheetsInputMode === 'picker' && !selectedSheetId) {
+      setSheetsError('Please select a spreadsheet from the list.');
+      return;
+    }
+    if (sheetsInputMode === 'url' && !sheetsUrl.trim()) {
+      setSheetsError('Please enter a Google Sheets URL.');
+      return;
+    }
 
     setIsLoadingSheets(true);
     setSheetsError(null);
@@ -606,7 +646,8 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accessToken: session.accessToken,
-          sheetUrl: sheetsUrl.trim(),
+          spreadsheetId: sheetsInputMode === 'picker' ? selectedSheetId : undefined,
+          sheetUrl: sheetsInputMode === 'url' ? sheetsUrl.trim() : undefined,
           range: sheetsColumn.trim() || 'A',
         }),
       });
@@ -641,6 +682,8 @@ export default function Home() {
       setSheetsColumn('A');
       setSheetsEmails([]);
       setSheetsError(null);
+      setSelectedSheetId('');
+      setAvailableSheets([]);
     }
   };
 
@@ -650,6 +693,9 @@ export default function Home() {
     setSheetsColumn('A');
     setSheetsEmails([]);
     setSheetsError(null);
+    setSelectedSheetId('');
+    setAvailableSheets([]);
+    setSheetsInputMode('picker');
   };
 
 
@@ -3999,20 +4045,128 @@ PEF3
             </div>
 
             <div className="space-y-4">
-              {/* Sheet URL Input */}
-              <div>
-                <label className="block text-white/80 text-sm font-medium mb-2">
-                  Google Sheets URL
-                </label>
-                <input
-                  type="text"
-                  value={sheetsUrl}
-                  onChange={(e) => setSheetsUrl(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  className="input-glass w-full text-sm"
-                  disabled={isLoadingSheets}
-                />
+              {/* Mode Toggle */}
+              <div className="flex bg-white/10 rounded-lg p-1">
+                <button
+                  onClick={() => setSheetsInputMode('picker')}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${sheetsInputMode === 'picker'
+                    ? 'bg-white/20 text-white'
+                    : 'text-white/60 hover:text-white'
+                    }`}
+                >
+                  My Spreadsheets
+                </button>
+                <button
+                  onClick={() => setSheetsInputMode('url')}
+                  className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${sheetsInputMode === 'url'
+                    ? 'bg-white/20 text-white'
+                    : 'text-white/60 hover:text-white'
+                    }`}
+                >
+                  Paste URL
+                </button>
               </div>
+
+              {/* Spreadsheet Picker Mode */}
+              {sheetsInputMode === 'picker' && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-white/80 text-sm font-medium">
+                      Select a spreadsheet
+                    </label>
+                    {availableSheets.length > 0 && (
+                      <button
+                        onClick={fetchAvailableSheets}
+                        disabled={isLoadingSheetsList}
+                        className="text-xs text-white/50 hover:text-white/80 transition-colors flex items-center gap-1"
+                      >
+                        <svg className={`w-3 h-3 ${isLoadingSheetsList ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        {isLoadingSheetsList ? 'Refreshing...' : 'Refresh'}
+                      </button>
+                    )}
+                  </div>
+                  {availableSheets.length === 0 ? (
+                    <button
+                      onClick={fetchAvailableSheets}
+                      disabled={isLoadingSheetsList}
+                      className="w-full py-3 px-4 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-sm text-white/80 transition-all flex items-center justify-center gap-2"
+                    >
+                      {isLoadingSheetsList ? (
+                        <>
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Loading spreadsheets...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          Load My Spreadsheets
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                      {availableSheets.map((sheet) => (
+                        <button
+                          key={sheet.id}
+                          onClick={() => setSelectedSheetId(sheet.id)}
+                          disabled={isLoadingSheets}
+                          className={`w-full p-3 rounded-lg border text-left transition-all flex items-center gap-3 ${selectedSheetId === sheet.id
+                              ? 'bg-green-500/20 border-green-500/50 text-white'
+                              : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10 hover:border-white/20'
+                            }`}
+                        >
+                          {/* Sheet Icon */}
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${selectedSheetId === sheet.id ? 'bg-green-500/30' : 'bg-white/10'
+                            }`}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                              <path d="M3 10h18M3 14h18M9 4v16M15 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
+                            </svg>
+                          </div>
+                          {/* Sheet Name */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{sheet.name}</p>
+                            {sheet.modifiedTime && (
+                              <p className="text-xs text-white/50 mt-0.5">
+                                Modified {new Date(sheet.modifiedTime).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                          {/* Selected Check */}
+                          {selectedSheetId === sheet.id && (
+                            <svg className="w-5 h-5 text-green-400 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                              <path d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* URL Input Mode */}
+              {sheetsInputMode === 'url' && (
+                <div>
+                  <label className="block text-white/80 text-sm font-medium mb-2">
+                    Google Sheets URL
+                  </label>
+                  <input
+                    type="text"
+                    value={sheetsUrl}
+                    onChange={(e) => setSheetsUrl(e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="input-glass w-full text-sm"
+                    disabled={isLoadingSheets}
+                  />
+                </div>
+              )}
 
               {/* Column Input */}
               <div>
@@ -4031,7 +4185,7 @@ PEF3
                   />
                   <button
                     onClick={handleFetchSheetsEmails}
-                    disabled={isLoadingSheets || !sheetsUrl.trim()}
+                    disabled={isLoadingSheets || (sheetsInputMode === 'picker' ? !selectedSheetId : !sheetsUrl.trim())}
                     className="btn-glass flex-1"
                   >
                     {isLoadingSheets ? (
@@ -4136,7 +4290,7 @@ PEF3
                   <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
-                  <span>Import recipients from Google Sheets</span>
+                  <span>Pick and import recipients from your Google Sheets</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
