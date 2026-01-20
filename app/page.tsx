@@ -41,6 +41,14 @@ interface ScheduleEntry {
   color: string;
 }
 
+// Email group for organizing imported recipients
+interface EmailGroup {
+  id: string;
+  name: string;        // e.g., "Group 1 (Column A)"
+  emails: string[];
+  source: 'sheets' | 'manual';
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('create');
   const [input, setInput] = useState('');
@@ -55,6 +63,8 @@ export default function Home() {
   const [creatingIndex, setCreatingIndex] = useState<number | null>(null);
 
   const [recipients, setRecipients] = useState<string[]>([]);
+  const [emailGroups, setEmailGroups] = useState<EmailGroup[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [recipientInput, setRecipientInput] = useState('');
 
   // Google Sheets import modal state
@@ -570,11 +580,29 @@ export default function Home() {
   };
 
   const addRecipients = () => {
+    const allExistingEmails = emailGroups.flatMap(g => g.emails);
     const emailsToAdd = recipientInput
       .split(/[\s,;\n]+/)
       .map(e => e.trim().toLowerCase())
-      .filter(e => e && isValidEmail(e) && !recipients.includes(e));
+      .filter(e => e && isValidEmail(e) && !allExistingEmails.includes(e));
     if (emailsToAdd.length > 0) {
+      // Add to existing manual group or create new one
+      const existingManual = emailGroups.find(g => g.source === 'manual');
+      if (existingManual) {
+        setEmailGroups(emailGroups.map(g =>
+          g.id === existingManual.id
+            ? { ...g, emails: [...g.emails, ...emailsToAdd] }
+            : g
+        ));
+      } else {
+        setEmailGroups([...emailGroups, {
+          id: `manual-${Date.now()}`,
+          name: 'Manual Entries',
+          emails: emailsToAdd,
+          source: 'manual',
+        }]);
+      }
+      // Also update legacy recipients for compatibility
       setRecipients([...recipients, ...emailsToAdd]);
       setRecipientInput('');
     }
@@ -582,6 +610,38 @@ export default function Home() {
 
   const removeRecipient = (email: string) => {
     setRecipients(recipients.filter(r => r !== email));
+  };
+
+  // Email group helper functions
+  const getAllRecipients = (): string[] => {
+    return emailGroups.flatMap(g => g.emails);
+  };
+
+  const toggleGroupExpansion = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  const removeEmailFromGroup = (groupId: string, email: string) => {
+    setEmailGroups(emailGroups.map(g => {
+      if (g.id !== groupId) return g;
+      const newEmails = g.emails.filter(e => e !== email);
+      return newEmails.length > 0 ? { ...g, emails: newEmails } : null;
+    }).filter(Boolean) as EmailGroup[]);
+    // Also update legacy recipients
+    setRecipients(recipients.filter(r => r !== email));
+  };
+
+  const removeGroup = (groupId: string) => {
+    const groupToRemove = emailGroups.find(g => g.id === groupId);
+    if (groupToRemove) {
+      setRecipients(recipients.filter(r => !groupToRemove.emails.includes(r)));
+    }
+    setEmailGroups(emailGroups.filter(g => g.id !== groupId));
   };
 
   const handleRecipientKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -655,8 +715,9 @@ export default function Home() {
       const result = await response.json();
 
       if (result.success && result.emails) {
-        // Filter out emails already in recipients
-        const newEmails = result.emails.filter((email: string) => !recipients.includes(email));
+        // Filter out emails already in any group
+        const allExistingEmails = emailGroups.flatMap(g => g.emails);
+        const newEmails = result.emails.filter((email: string) => !allExistingEmails.includes(email));
         setSheetsEmails(newEmails);
 
         if (newEmails.length === 0 && result.emails.length > 0) {
@@ -676,6 +737,16 @@ export default function Home() {
 
   const handleImportSheetsEmails = () => {
     if (sheetsEmails.length > 0) {
+      // Create a new group for this import
+      const sheetGroupCount = emailGroups.filter(g => g.source === 'sheets').length + 1;
+      const newGroup: EmailGroup = {
+        id: `group-${Date.now()}`,
+        name: `Group ${sheetGroupCount} (Column ${sheetsColumn})`,
+        emails: sheetsEmails,
+        source: 'sheets',
+      };
+      setEmailGroups([...emailGroups, newGroup]);
+      // Also update legacy recipients for compatibility
       setRecipients([...recipients, ...sheetsEmails]);
       setShowSheetsModal(false);
       setSheetsUrl('');
@@ -2046,143 +2117,296 @@ export default function Home() {
           {activeTab === 'create' && (
             <div className="glass-container animate-slide-up">
               <div className="flex flex-col lg:flex-row gap-5 h-full">
-                {/* Left Panel - Recipients */}
-                <div className="w-full lg:w-72 flex-shrink-0">
-                  <div className="glass-panel p-5 h-full">
-                    <div className="flex items-center gap-3 mb-5">
-                      <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                        <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-white text-sm">Recipients</h3>
-                        {/* <p className="text-xs text-white/50 mt-0.5">Add classmates</p> */}
+                {/* Left Column - Recipients + To-Do List (stacked vertically) */}
+                <div className={`flex flex-col gap-5 ${parsedItems.length > 0 ? 'lg:w-1/2' : 'w-full lg:flex-row'} transition-all`}>
+                  {/* Recipients Panel */}
+                  <div className={`w-full ${parsedItems.length > 0 ? '' : 'lg:w-72'} shrink-0`}>
+                    <div className="glass-panel p-5 h-full">
+                      <div className="flex items-center gap-3 mb-5">
+                        <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                          <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-white text-sm">Recipients</h3>
+                        </div>
+                        {recipients.length > 0 && (
+                          <span className="badge-glass">{emailGroups.reduce((sum, g) => sum + g.emails.length, 0)}</span>
+                        )}
                       </div>
-                      {recipients.length > 0 && (
-                        <span className="badge-glass">{recipients.length}</span>
+
+                      <div className="flex gap-2 mb-4">
+                        <textarea
+                          value={recipientInput}
+                          onChange={(e) => setRecipientInput(e.target.value)}
+                          onKeyDown={handleRecipientKeyDown}
+                          placeholder="Paste emails..."
+                          rows={2}
+                          className="input-glass flex-1 text-xs resize-none"
+                        />
+                        <button
+                          onClick={addRecipients}
+                          disabled={getValidEmailCount() === 0}
+                          className="add-btn-glass"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {recipientInput.trim() && (
+                        <p className="text-xs text-white/60 mb-3">
+                          <span className="text-white font-medium">{getValidEmailCount()}</span> valid email{getValidEmailCount() !== 1 ? 's' : ''} detected
+                        </p>
+                      )}
+
+                      {/* Import from Google Sheets button */}
+                      {session && (
+                        <button
+                          onClick={() => setShowSheetsModal(true)}
+                          className="w-full mb-4 px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 rounded-lg text-xs text-white/80 hover:text-white transition-all flex items-center justify-center gap-2"
+                        >
+                          Import from Google Sheets
+                        </button>
+                      )}
+
+                      {emailGroups.length > 0 ? (
+                        <div className="space-y-2 max-h-[180px] overflow-y-auto">
+                          {emailGroups.map((group) => (
+                            <div key={group.id} className="bg-white/5 rounded-lg overflow-hidden border border-white/10">
+                              {/* Group Header - Clickable */}
+                              <div
+                                className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/10 transition-colors cursor-pointer"
+                                onClick={() => toggleGroupExpansion(group.id)}
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <svg
+                                    className={`w-3 h-3 text-white/60 transition-transform flex-shrink-0 ${expandedGroups.has(group.id) ? 'rotate-90' : ''}`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  <span className="text-xs text-white truncate">{group.name}</span>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <span className="text-[10px] px-1.5 py-0.5 bg-white/20 rounded-full text-white/80">{group.emails.length}</span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); removeGroup(group.id); }}
+                                    className="text-white/40 hover:text-red-300 transition-colors text-sm"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Expanded Emails List */}
+                              {expandedGroups.has(group.id) && (
+                                <div className="px-3 pb-2 space-y-1 border-t border-white/10 pt-2">
+                                  {group.emails.map((email, idx) => (
+                                    <div key={idx} className="flex items-center justify-between py-1 px-2 bg-white/5 rounded text-xs">
+                                      <span className="truncate text-white/80">{email}</span>
+                                      <button
+                                        onClick={() => removeEmailFromGroup(group.id, email)}
+                                        className="ml-2 text-white/40 hover:text-red-300 transition-colors flex-shrink-0"
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="empty-state-glass">
+                          <svg fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
+                            <circle cx="12" cy="8" r="4" />
+                            <path d="M6 20c0-3.5 2.5-6 6-6s6 2.5 6 6" />
+                          </svg>
+                          <p>No recipients yet</p>
+                        </div>
+                      )}
+
+                      {emailGroups.length > 0 && (
+                        <button
+                          onClick={() => { setEmailGroups([]); setRecipients([]); }}
+                          className="mt-4 text-xs text-white/60 hover:text-white transition-colors w-full text-center"
+                        >
+                          Clear all
+                        </button>
                       )}
                     </div>
-
-                    <div className="flex gap-2 mb-4">
-                      <textarea
-                        value={recipientInput}
-                        onChange={(e) => setRecipientInput(e.target.value)}
-                        onKeyDown={handleRecipientKeyDown}
-                        placeholder="Paste emails..."
-                        rows={2}
-                        className="input-glass flex-1 text-xs resize-none"
-                      />
-                      <button
-                        onClick={addRecipients}
-                        disabled={getValidEmailCount() === 0}
-                        className="add-btn-glass"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    {recipientInput.trim() && (
-                      <p className="text-xs text-white/60 mb-3">
-                        <span className="text-white font-medium">{getValidEmailCount()}</span> valid email{getValidEmailCount() !== 1 ? 's' : ''} detected
-                      </p>
-                    )}
-
-                    {/* Import from Google Sheets button */}
-                    {session && (
-                      <button
-                        onClick={() => setShowSheetsModal(true)}
-                        className="w-full mb-4 px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 rounded-lg text-xs text-white/80 hover:text-white transition-all flex items-center justify-center gap-2"
-                      >
-                        {/* <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                          <path d="M3 10h18M3 14h18M9 4v16M15 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
-                        </svg> */}
-                        Import from Google Sheets
-                      </button>
-                    )}
-
-                    {recipients.length > 0 ? (
-                      <div className="space-y-2 max-h-[180px] overflow-y-auto">
-                        {recipients.map((email, index) => (
-                          <div key={index} className="recipient-item-glass">
-                            <span className="truncate text-sm">{email}</span>
-                            <button
-                              onClick={() => removeRecipient(email)}
-                              className="ml-2 text-white/40 hover:text-red-300 transition-colors flex-shrink-0 text-lg font-light"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="empty-state-glass">
-                        <svg fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
-                          <circle cx="12" cy="8" r="4" />
-                          <path d="M6 20c0-3.5 2.5-6 6-6s6 2.5 6 6" />
-                        </svg>
-                        <p>No recipients yet</p>
-                      </div>
-                    )}
-
-                    {recipients.length > 0 && (
-                      <button
-                        onClick={() => setRecipients([])}
-                        className="mt-4 text-xs text-white/60 hover:text-white transition-colors w-full text-center"
-                      >
-                        Clear all
-                      </button>
-                    )}
                   </div>
-                </div>
 
-                {/* Right Panel - To-Do List Input */}
-                <div className="flex-1 min-w-0">
-                  <div className="glass-panel p-5 h-full flex flex-col">
-                    <form onSubmit={handleParseInput} className="flex-1 flex flex-col">
-                      <div className="flex items-center gap-3 mb-4">
-                        <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                          <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                        <h3 className="font-semibold text-white text-sm">To-Do List</h3>
-                      </div>
-                      <textarea
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        placeholder="Paste your to-do list here...
+                  {/* To-Do List Panel */}
+                  <div className="flex-1 min-w-0">
+                    <div className="glass-panel p-5 h-full flex flex-col">
+                      <form onSubmit={handleParseInput} className="flex-1 flex flex-col">
+                        <div className="flex items-center gap-3 mb-4">
+                          <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          <h3 className="font-semibold text-white text-sm">To-Do List</h3>
+                        </div>
+                        <textarea
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          placeholder="Paste your to-do list here...
 
 Example:
 PEF3
 - Submit video (Dec 12)
 - Course Evaluation (until Dec 12)
 - Performance (on Dec 12)"
-                        className="flex-1 w-full min-h-[160px] p-4 bg-white/15 border border-white/25 rounded-xl text-white text-sm placeholder-white/60 focus:outline-none focus:border-white/50 focus:bg-white/20 resize-none"
-                        disabled={isParsing}
-                      />
-                      <div className="flex justify-between items-center mt-4">
-                        <span className="text-xs text-white/60">
-                          {input.length > 0 && `${input.split('\n').filter(l => l.trim()).length} lines`}
-                        </span>
-                        <button type="submit" disabled={isParsing || !input.trim()} className="btn-glass">
-                          {isParsing ? (
+                          className="flex-1 w-full min-h-[160px] p-4 bg-white/15 border border-white/25 rounded-xl text-white text-sm placeholder-white/60 focus:outline-none focus:border-white/50 focus:bg-white/20 resize-none"
+                          disabled={isParsing}
+                        />
+                        <div className="flex justify-between items-center mt-4">
+                          <span className="text-xs text-white/60">
+                            {input.length > 0 && `${input.split('\n').filter(l => l.trim()).length} lines`}
+                          </span>
+                          <button type="submit" disabled={isParsing || !input.trim()} className="btn-glass">
+                            {isParsing ? (
+                              <span className="flex items-center gap-2">
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                Parsing
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-2">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                                </svg>
+                                Parse with AI
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column - Parsed Items (only visible when items exist) */}
+                {parsedItems.length > 0 && (
+                  <div className="lg:w-1/2 shrink-0">
+                    <div className="glass-panel p-5 h-full flex flex-col" style={{ minHeight: 'calc(100vh - 200px)' }}>
+                      {/* Header */}
+                      <div className="flex items-center justify-between mb-4 pb-4 border-b border-white/20">
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-white text-sm">{parsedItems.length} items</span>
+                          <span className="px-2 py-1 bg-white/20 text-white text-xs font-semibold rounded-full">{selectedItems.size} selected</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <button onClick={selectAll} className="text-white/70 hover:text-white text-xs font-medium transition-colors">Select all</button>
+                          <button onClick={deselectAll} className="text-white/70 hover:text-white text-xs font-medium transition-colors">Clear</button>
+                        </div>
+                      </div>
+
+                      {/* Items List */}
+                      <div className="flex-1 overflow-y-auto space-y-2">
+                        {parsedItems.map((item, index) => (
+                          <div
+                            key={index}
+                            onClick={() => toggleItemSelection(index)}
+                            className={`p-3 rounded-lg cursor-pointer transition-all ${selectedItems.has(index)
+                              ? 'bg-white/20 border border-white/40'
+                              : 'bg-white/10 border border-transparent hover:border-white/20'
+                              }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${selectedItems.has(index)
+                                ? 'bg-white border-white'
+                                : 'border-white/40'
+                                }`}>
+                                {selectedItems.has(index) && (
+                                  <svg className="w-2.5 h-2.5" fill="none" stroke="#b91c1c" strokeWidth="3" viewBox="0 0 24 24">
+                                    <path d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${item.type === 'event' ? 'bg-blue-500/30 text-blue-200' : 'bg-amber-500/30 text-amber-200'}`}>
+                                    {item.type === 'event' ? 'Event' : 'Task'}
+                                  </span>
+                                  {item.type === 'task' && (item as CalendarTask).priority && (
+                                    <span className="px-2 py-0.5 bg-white/10 text-white/70 text-[10px] font-semibold rounded">
+                                      {(item as CalendarTask).priority}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="font-semibold text-white text-sm truncate">{item.title}</p>
+                                <p className="text-[10px] text-white/60 mt-1">
+                                  {item.type === 'event' ? formatDateTime((item as CalendarEvent).startDateTime) : formatDate((item as CalendarTask).dueDate)}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => handleCreateSingleEvent(index)}
+                                  disabled={!session || creatingIndex === index}
+                                  className="p-2 text-white/50 hover:text-green-300 hover:bg-green-500/20 rounded-lg transition-all disabled:opacity-30"
+                                >
+                                  {creatingIndex === index ? (
+                                    <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                      <path d="M12 4v16m8-8H4" />
+                                    </svg>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => removeItem(index)}
+                                  className="p-2 text-white/50 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-all"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="mt-4 pt-4 border-t border-white/20 flex items-center justify-between">
+                        <button
+                          onClick={() => { setParsedItems([]); setSelectedItems(new Set()); }}
+                          className="text-white/70 hover:text-white text-xs font-medium transition-colors"
+                        >
+                          Clear all
+                        </button>
+                        <button
+                          onClick={handleCreateSelectedEvents}
+                          disabled={isLoading || !session || selectedItems.size === 0}
+                          className="px-4 py-2 bg-white text-red-700 font-bold text-xs uppercase tracking-wide rounded-full hover:bg-white/90 transition-all disabled:opacity-50"
+                        >
+                          {isLoading ? (
                             <span className="flex items-center gap-2">
-                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                              <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                               </svg>
-                              Parsing
+                              Creating
                             </span>
                           ) : (
-                            <span className="flex items-center gap-2">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                              </svg>
-                              Parse with AI
-                            </span>
+                            <span>Add {selectedItems.size} to Calendar</span>
                           )}
                         </button>
                       </div>
-                    </form>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -3031,118 +3255,6 @@ PEF3
             </div>
           )}
         </div>
-
-        {/* Parsed Items Section - Below hero */}
-        {parsedItems.length > 0 && activeTab === 'create' && (
-          <div className="max-w-5xl mx-auto px-6 py-12 animate-slide-up">
-            <div className="flex items-center justify-between mb-6 pb-5 border-b border-white/20">
-              <div className="flex items-center gap-4">
-                <span className="font-bold text-white text-lg">{parsedItems.length} items found</span>
-                <span className="px-3 py-3 bg-white/20 text-white text-xs font-semibold rounded-full">{selectedItems.size} selected</span>
-              </div>
-              <div className="flex items-center gap-6">
-                <button onClick={selectAll} className="text-white/70 hover:text-white text-sm font-medium transition-colors">Select all</button>
-                <button onClick={deselectAll} className="text-white/70 hover:text-white text-sm font-medium transition-colors">Clear</button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {parsedItems.map((item, index) => (
-                <div
-                  key={index}
-                  onClick={() => toggleItemSelection(index)}
-                  className={`p-4 rounded-xl cursor-pointer transition-all ${selectedItems.has(index)
-                    ? 'bg-white/20 border-2 border-white/40'
-                    : 'bg-white/10 border-2 border-transparent hover:border-white/20'
-                    }`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${selectedItems.has(index)
-                      ? 'bg-white border-white'
-                      : 'border-white/40'
-                      }`}>
-                      {selectedItems.has(index) && (
-                        <svg className="w-3 h-3" fill="none" stroke="#b91c1c" strokeWidth="3" viewBox="0 0 24 24">
-                          <path d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className={`px-2 py-0.5 text-xs font-bold rounded ${item.type === 'event' ? 'bg-blue-500/30 text-blue-200' : 'bg-amber-500/30 text-amber-200'}`}>
-                          {item.type === 'event' ? 'Event' : 'Task'}
-                        </span>
-                        {item.type === 'task' && (item as CalendarTask).priority && (
-                          <span className="px-2 py-0.5 bg-white/10 text-white/70 text-xs font-semibold rounded">
-                            {(item as CalendarTask).priority}
-                          </span>
-                        )}
-                      </div>
-                      <p className="font-semibold text-white">{item.title}</p>
-                      <p className="text-xs text-white/60 mt-1.5">
-                        {item.type === 'event' ? formatDateTime((item as CalendarEvent).startDateTime) : formatDate((item as CalendarTask).dueDate)}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => handleCreateSingleEvent(index)}
-                        disabled={!session || creatingIndex === index}
-                        className="p-2.5 text-white/50 hover:text-green-300 hover:bg-green-500/20 rounded-xl transition-all disabled:opacity-30"
-                      >
-                        {creatingIndex === index ? (
-                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path d="M12 4v16m8-8H4" />
-                          </svg>
-                        )}
-                      </button>
-                      <button
-                        onClick={() => removeItem(index)}
-                        className="p-2.5 text-white/50 hover:text-red-300 hover:bg-red-500/20 rounded-xl transition-all"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-8 flex items-center justify-between pt-6 border-t border-white/20">
-              <button
-                onClick={() => { setParsedItems([]); setSelectedItems(new Set()); }}
-                className="text-white/70 hover:text-white text-sm font-medium transition-colors"
-              >
-                Clear all
-              </button>
-              <button
-                onClick={handleCreateSelectedEvents}
-                disabled={isLoading || !session || selectedItems.size === 0}
-                className="px-6 py-3 bg-white text-red-700 font-bold text-sm uppercase tracking-wide rounded-full hover:bg-white/90 transition-all disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <span className="flex items-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Creating
-                  </span>
-                ) : (
-                  <span>Add {selectedItems.size} to Calendar</span>
-                )}
-              </button>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* Edit Event Modal */}
@@ -4118,8 +4230,8 @@ PEF3
                           onClick={() => setSelectedSheetId(sheet.id)}
                           disabled={isLoadingSheets}
                           className={`w-full p-3 rounded-lg border text-left transition-all flex items-center gap-3 ${selectedSheetId === sheet.id
-                              ? 'bg-green-500/20 border-green-500/50 text-white'
-                              : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10 hover:border-white/20'
+                            ? 'bg-green-500/20 border-green-500/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10 hover:border-white/20'
                             }`}
                         >
                           {/* Sheet Icon */}
