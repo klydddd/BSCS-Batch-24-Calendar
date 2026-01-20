@@ -65,6 +65,7 @@ export default function Home() {
   const [recipients, setRecipients] = useState<string[]>([]);
   const [emailGroups, setEmailGroups] = useState<EmailGroup[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [checkedGroups, setCheckedGroups] = useState<Set<string>>(new Set());
   const [recipientInput, setRecipientInput] = useState('');
 
   // Google Sheets import modal state
@@ -595,12 +596,15 @@ export default function Home() {
             : g
         ));
       } else {
+        const newGroupId = `manual-${Date.now()}`;
         setEmailGroups([...emailGroups, {
-          id: `manual-${Date.now()}`,
+          id: newGroupId,
           name: 'Manual Entries',
           emails: emailsToAdd,
           source: 'manual',
         }]);
+        // Auto-check the new group
+        setCheckedGroups(prev => new Set([...prev, newGroupId]));
       }
       // Also update legacy recipients for compatibility
       setRecipients([...recipients, ...emailsToAdd]);
@@ -614,7 +618,17 @@ export default function Home() {
 
   // Email group helper functions
   const getAllRecipients = (): string[] => {
-    return emailGroups.flatMap(g => g.emails);
+    // Only return emails from checked groups
+    return emailGroups.filter(g => checkedGroups.has(g.id)).flatMap(g => g.emails);
+  };
+
+  const toggleGroupChecked = (groupId: string) => {
+    setCheckedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
   };
 
   const toggleGroupExpansion = (groupId: string) => {
@@ -642,6 +656,12 @@ export default function Home() {
       setRecipients(recipients.filter(r => !groupToRemove.emails.includes(r)));
     }
     setEmailGroups(emailGroups.filter(g => g.id !== groupId));
+    // Also remove from checked groups
+    setCheckedGroups(prev => {
+      const next = new Set(prev);
+      next.delete(groupId);
+      return next;
+    });
   };
 
   const handleRecipientKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -746,6 +766,8 @@ export default function Home() {
         source: 'sheets',
       };
       setEmailGroups([...emailGroups, newGroup]);
+      // Auto-check the new group
+      setCheckedGroups(prev => new Set([...prev, newGroup.id]));
       // Also update legacy recipients for compatibility
       setRecipients([...recipients, ...sheetsEmails]);
       setShowSheetsModal(false);
@@ -816,8 +838,9 @@ export default function Home() {
     setCreatingIndex(index);
     setError(null);
     const item = { ...parsedItems[index] };
-    if (recipients.length > 0 && item.type === 'event') {
-      (item as CalendarEvent).attendees = [...(item.attendees || []), ...recipients];
+    const activeRecipients = getAllRecipients();
+    if (activeRecipients.length > 0 && item.type === 'event') {
+      (item as CalendarEvent).attendees = [...(item.attendees || []), ...activeRecipients];
     }
     try {
       // Create event WITHOUT sending notifications (we'll send summary email instead)
@@ -827,16 +850,16 @@ export default function Home() {
         body: JSON.stringify({
           accessToken: session.accessToken,
           calendarItem: item,
-          attendees: recipients,
+          attendees: activeRecipients,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          sendNotifications: recipients.length === 0 // Only auto-send if no recipients (for self)
+          sendNotifications: activeRecipients.length === 0 // Only auto-send if no recipients (for self)
         }),
       });
       const result: CalendarCreateResponse = await response.json();
       if (result.success) {
         // If there are recipients, send a summary email
         let emailSent = false;
-        if (recipients.length > 0) {
+        if (activeRecipients.length > 0) {
           const eventInfo = {
             title: item.title,
             date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
@@ -847,7 +870,7 @@ export default function Home() {
             isAllDay: item.type === 'task'
           };
 
-          console.log('Sending summary email for single event:', { eventInfo, recipients, senderEmail: session.email });
+          console.log('Sending summary email for single event:', { eventInfo, recipients: activeRecipients, senderEmail: session.email });
 
           try {
             const emailResponse = await fetch('/api/email', {
@@ -856,7 +879,7 @@ export default function Home() {
               body: JSON.stringify({
                 accessToken: session.accessToken,
                 senderEmail: session.email,
-                recipients: recipients,
+                recipients: activeRecipients,
                 events: [eventInfo]
               }),
             });
@@ -879,7 +902,7 @@ export default function Home() {
           else if (i > index) newSelected.add(i - 1);
         });
         setSelectedItems(newSelected);
-        setSuccess(`Created "${parsedItems[index].title}" successfully!${emailSent ? ' Summary email sent.' : (recipients.length > 0 ? ' (Email failed)' : '')}`);
+        setSuccess(`Created "${parsedItems[index].title}" successfully!${emailSent ? ' Summary email sent.' : (activeRecipients.length > 0 ? ' (Email failed)' : '')}`);
       } else {
         setError(result.error || 'Failed to create event');
       }
@@ -905,11 +928,12 @@ export default function Home() {
       link?: string;
       isAllDay: boolean;
     }> = [];
+    const activeRecipients = getAllRecipients();
 
     for (const index of Array.from(selectedItems).sort((a, b) => b - a)) {
       const item = { ...parsedItems[index] };
-      if (recipients.length > 0 && item.type === 'event') {
-        (item as CalendarEvent).attendees = [...(item.attendees || []), ...recipients];
+      if (activeRecipients.length > 0 && item.type === 'event') {
+        (item as CalendarEvent).attendees = [...(item.attendees || []), ...activeRecipients];
       }
       try {
         // Create event WITHOUT sending notifications
@@ -919,9 +943,9 @@ export default function Home() {
           body: JSON.stringify({
             accessToken: session.accessToken,
             calendarItem: item,
-            attendees: recipients,
+            attendees: activeRecipients,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            sendNotifications: recipients.length === 0 // Only auto-send if no recipients
+            sendNotifications: activeRecipients.length === 0 // Only auto-send if no recipients
           }),
         });
         const result: CalendarCreateResponse = await response.json();
@@ -930,7 +954,7 @@ export default function Home() {
           createdIndices.push(index);
 
           // Collect event info for summary email
-          if (recipients.length > 0) {
+          if (activeRecipients.length > 0) {
             createdEventInfos.push({
               title: item.title,
               date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
@@ -949,8 +973,8 @@ export default function Home() {
 
     // Send ONE summary email with all created events
     let emailSent = false;
-    if (recipients.length > 0 && createdEventInfos.length > 0) {
-      console.log('Sending summary email for multiple events:', { eventCount: createdEventInfos.length, recipients, senderEmail: session.email });
+    if (activeRecipients.length > 0 && createdEventInfos.length > 0) {
+      console.log('Sending summary email for multiple events:', { eventCount: createdEventInfos.length, recipients: activeRecipients, senderEmail: session.email });
       try {
         const emailResponse = await fetch('/api/email', {
           method: 'POST',
@@ -958,7 +982,7 @@ export default function Home() {
           body: JSON.stringify({
             accessToken: session.accessToken,
             senderEmail: session.email,
-            recipients: recipients,
+            recipients: activeRecipients,
             events: createdEventInfos
           }),
         });
@@ -978,7 +1002,7 @@ export default function Home() {
     setParsedItems(newItems);
     setSelectedItems(new Set());
     if (successCount > 0) {
-      const emailSentMsg = emailSent ? ' Summary email sent!' : (recipients.length > 0 && createdEventInfos.length > 0 ? ' (Email failed)' : '');
+      const emailSentMsg = emailSent ? ' Summary email sent!' : (activeRecipients.length > 0 && createdEventInfos.length > 0 ? ' (Email failed)' : '');
       setSuccess(`Created ${successCount} item${successCount > 1 ? 's' : ''}!${failCount > 0 ? ` (${failCount} failed)` : ''}${emailSentMsg}`);
     }
     if (failCount > 0 && successCount === 0) setError(`Failed to create ${failCount} item${failCount > 1 ? 's' : ''}.`);
@@ -2129,8 +2153,8 @@ export default function Home() {
                         <div className="flex-1">
                           <h3 className="font-semibold text-white text-sm">Recipients</h3>
                         </div>
-                        {recipients.length > 0 && (
-                          <span className="badge-glass">{emailGroups.reduce((sum, g) => sum + g.emails.length, 0)}</span>
+                        {emailGroups.length > 0 && (
+                          <span className="badge-glass">{getAllRecipients().length}</span>
                         )}
                       </div>
 
@@ -2171,23 +2195,43 @@ export default function Home() {
                       {emailGroups.length > 0 ? (
                         <div className="space-y-2 max-h-[180px] overflow-y-auto">
                           {emailGroups.map((group) => (
-                            <div key={group.id} className="bg-white/5 rounded-lg overflow-hidden border border-white/10">
+                            <div key={group.id} className={`bg-white/5 rounded-lg overflow-hidden border transition-colors ${checkedGroups.has(group.id) ? 'border-green-500/50' : 'border-white/10'}`}>
                               {/* Group Header - Clickable */}
                               <div
                                 className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/10 transition-colors cursor-pointer"
-                                onClick={() => toggleGroupExpansion(group.id)}
                               >
                                 <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  {/* Checkbox */}
+                                  <div
+                                    onClick={(e) => { e.stopPropagation(); toggleGroupChecked(group.id); }}
+                                    className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 cursor-pointer transition-all ${checkedGroups.has(group.id)
+                                      ? 'bg-green-500 border-green-500'
+                                      : 'border-white/40 hover:border-white/60'
+                                      }`}
+                                  >
+                                    {checkedGroups.has(group.id) && (
+                                      <svg className="w-2.5 h-2.5" fill="none" stroke="white" strokeWidth="3" viewBox="0 0 24 24">
+                                        <path d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                  {/* Expand icon */}
                                   <svg
                                     className={`w-3 h-3 text-white/60 transition-transform flex-shrink-0 ${expandedGroups.has(group.id) ? 'rotate-90' : ''}`}
                                     fill="none"
                                     stroke="currentColor"
                                     strokeWidth="2"
                                     viewBox="0 0 24 24"
+                                    onClick={(e) => { e.stopPropagation(); toggleGroupExpansion(group.id); }}
                                   >
                                     <path d="M9 5l7 7-7 7" />
                                   </svg>
-                                  <span className="text-xs text-white truncate">{group.name}</span>
+                                  <span
+                                    className="text-xs text-white truncate cursor-pointer"
+                                    onClick={() => toggleGroupExpansion(group.id)}
+                                  >
+                                    {group.name}
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   <span className="text-[10px] px-1.5 py-0.5 bg-white/20 rounded-full text-white/80">{group.emails.length}</span>
@@ -2231,7 +2275,7 @@ export default function Home() {
 
                       {emailGroups.length > 0 && (
                         <button
-                          onClick={() => { setEmailGroups([]); setRecipients([]); }}
+                          onClick={() => { setEmailGroups([]); setRecipients([]); setCheckedGroups(new Set()); }}
                           className="mt-4 text-xs text-white/60 hover:text-white transition-colors w-full text-center"
                         >
                           Clear all
