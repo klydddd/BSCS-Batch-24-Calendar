@@ -100,6 +100,68 @@ export default function Home() {
     endTime: '',
     isAllDay: false,
   });
+
+  // Manual Add Event modal state
+  const [showManualEventModal, setShowManualEventModal] = useState(false);
+  const [manualEventForm, setManualEventForm] = useState({
+    title: '',
+    description: '',
+    startDate: new Date().toISOString().split('T')[0],
+    startTime: '08:00',
+    endDate: new Date().toISOString().split('T')[0],
+    endTime: '09:00',
+    type: 'event' as 'event' | 'task',
+    isAllDay: false
+  });
+
+  const handleManualAddEvent = () => {
+    setShowManualEventModal(true);
+    setManualEventForm({
+      title: '',
+      description: '',
+      startDate: new Date().toISOString().split('T')[0],
+      startTime: '08:00',
+      endDate: new Date().toISOString().split('T')[0],
+      endTime: '09:00',
+      type: 'event',
+      isAllDay: false
+    });
+  };
+
+  const handleSaveManualEvent = () => {
+    if (!manualEventForm.title.trim()) return;
+
+    let newItem: CalendarItem;
+
+    if (manualEventForm.type === 'event') {
+      newItem = {
+        type: 'event',
+        title: manualEventForm.title,
+        description: manualEventForm.description,
+        startDateTime: manualEventForm.isAllDay
+          ? manualEventForm.startDate
+          : `${manualEventForm.startDate}T${manualEventForm.startTime}:00`,
+        endDateTime: manualEventForm.isAllDay
+          ? manualEventForm.endDate
+          : `${manualEventForm.endDate}T${manualEventForm.endTime}:00`,
+      };
+    } else {
+      newItem = {
+        type: 'task',
+        title: manualEventForm.title,
+        description: manualEventForm.description,
+        dueDate: manualEventForm.isAllDay
+          ? manualEventForm.startDate
+          : `${manualEventForm.startDate}T${manualEventForm.startTime}:00`,
+      };
+    }
+
+    // Add unique ID
+    (newItem as any).id = `manual-${Date.now()}`;
+
+    setParsedItems(prev => [...prev, newItem]);
+    setShowManualEventModal(false);
+  };
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Calendar view state
@@ -735,14 +797,12 @@ export default function Home() {
       const result = await response.json();
 
       if (result.success && result.emails) {
-        // Filter out emails already in any group
-        const allExistingEmails = emailGroups.flatMap(g => g.emails);
-        const newEmails = result.emails.filter((email: string) => !allExistingEmails.includes(email));
-        setSheetsEmails(newEmails);
+        // Treat each column parsing as independent event (disable cross-group deduplication)
+        // We only deduplicate within the current column selection itself
+        const uniqueEmails = Array.from(new Set(result.emails as string[]));
+        setSheetsEmails(uniqueEmails);
 
-        if (newEmails.length === 0 && result.emails.length > 0) {
-          setSheetsError('All emails from this sheet are already in your recipients list.');
-        } else if (result.emails.length === 0) {
+        if (uniqueEmails.length === 0) {
           setSheetsError(`No valid emails found in column ${sheetsColumn}. Found ${result.totalRows} rows total.`);
         }
       } else {
@@ -789,6 +849,30 @@ export default function Home() {
     setSelectedSheetId('');
     setAvailableSheets([]);
     setSheetsInputMode('picker');
+  };
+
+  // Helper function to get color classes based on item title
+  const getItemColorClasses = (title: string): { bg: string; text: string; border: string } => {
+    const lowerTitle = title.toLowerCase();
+
+    // Quiz/Exam - Red
+    if (lowerTitle.includes('quiz') || lowerTitle.includes('exam') || lowerTitle.includes('test')) {
+      return { bg: 'bg-red-500/30', text: 'text-red-200', border: 'border-red-400/50' };
+    }
+
+    // Assignment/Homework - Yellow/Amber
+    if (lowerTitle.includes('assignment') || lowerTitle.includes('homework') ||
+      lowerTitle.includes('hw') || lowerTitle.includes('activity') || lowerTitle.includes('exercise')) {
+      return { bg: 'bg-yellow-500/30', text: 'text-yellow-200', border: 'border-yellow-400/50' };
+    }
+
+    // Project - Blue
+    if (lowerTitle.includes('project') || lowerTitle.includes('capstone')) {
+      return { bg: 'bg-blue-500/30', text: 'text-blue-200', border: 'border-blue-400/50' };
+    }
+
+    // Default - Green
+    return { bg: 'bg-green-500/30', text: 'text-green-200', border: 'border-green-400/50' };
   };
 
 
@@ -2311,24 +2395,34 @@ PEF3
                           <span className="text-xs text-white/60">
                             {input.length > 0 && `${input.split('\n').filter(l => l.trim()).length} lines`}
                           </span>
-                          <button type="submit" disabled={isParsing || !input.trim()} className="btn-glass">
-                            {isParsing ? (
-                              <span className="flex items-center gap-2">
-                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                </svg>
-                                Parsing
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-2">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                                </svg>
-                                Parse with AI
-                              </span>
-                            )}
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleManualAddEvent}
+                              className="px-4 py-2 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition-all text-sm font-medium flex items-center gap-2"
+                              disabled={isParsing}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                              </svg>
+                              Add events
+                            </button>
+                            <button type="submit" disabled={isParsing || !input.trim()} className="btn-glass">
+                              {isParsing ? (
+                                <span className="flex items-center gap-2">
+                                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                  </svg>
+                                  Parsing
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-2">
+                                  Generate events
+                                </span>
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </form>
                     </div>
@@ -2376,9 +2470,34 @@ PEF3
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${item.type === 'event' ? 'bg-blue-500/30 text-blue-200' : 'bg-amber-500/30 text-amber-200'}`}>
-                                    {item.type === 'event' ? 'Event' : 'Task'}
-                                  </span>
+                                  {/* Color-coded badge based on item type/content */}
+                                  {(() => {
+                                    const colors = getItemColorClasses(item.title);
+                                    return (
+                                      <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${colors.bg} ${colors.text}`}>
+                                        {item.type === 'event' ? 'Event' : 'Task'}
+                                      </span>
+                                    );
+                                  })()}
+                                  {/* Category indicator */}
+                                  {(() => {
+                                    const lowerTitle = item.title.toLowerCase();
+                                    let category = '';
+                                    if (lowerTitle.includes('quiz') || lowerTitle.includes('exam') || lowerTitle.includes('test')) {
+                                      category = '📝 Quiz/Exam';
+                                    } else if (lowerTitle.includes('assignment') || lowerTitle.includes('homework') || lowerTitle.includes('hw')) {
+                                      category = '📄 Assignment';
+                                    } else if (lowerTitle.includes('project') || lowerTitle.includes('capstone')) {
+                                      category = '🗂️ Project';
+                                    } else if (lowerTitle.includes('activity') || lowerTitle.includes('exercise')) {
+                                      category = '✏️ Activity';
+                                    }
+                                    return category ? (
+                                      <span className="px-2 py-0.5 bg-white/10 text-white/70 text-[10px] font-semibold rounded">
+                                        {category}
+                                      </span>
+                                    ) : null;
+                                  })()}
                                   {item.type === 'task' && (item as CalendarTask).priority && (
                                     <span className="px-2 py-0.5 bg-white/10 text-white/70 text-[10px] font-semibold rounded">
                                       {(item as CalendarTask).priority}
@@ -4417,6 +4536,132 @@ PEF3
                 className="flex-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Import {sheetsEmails.length > 0 ? `${sheetsEmails.length} Email${sheetsEmails.length !== 1 ? 's' : ''}` : 'Emails'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Add Event Modal */}
+      {showManualEventModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-white mb-6">Add Manually</h3>
+
+            <div className="space-y-4">
+              {/* Type Selection */}
+              <div className="flex bg-white/5 p-1 rounded-lg">
+                <button
+                  onClick={() => setManualEventForm({ ...manualEventForm, type: 'event' })}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${manualEventForm.type === 'event' ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/80'}`}
+                >
+                  Event
+                </button>
+                <button
+                  onClick={() => setManualEventForm({ ...manualEventForm, type: 'task' })}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${manualEventForm.type === 'task' ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/80'}`}
+                >
+                  Task
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Title</label>
+                <input
+                  type="text"
+                  value={manualEventForm.title}
+                  onChange={e => setManualEventForm({ ...manualEventForm, title: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/40 transition-all"
+                  placeholder="Event title"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={manualEventForm.isAllDay}
+                  onChange={e => setManualEventForm({ ...manualEventForm, isAllDay: e.target.checked })}
+                  className="rounded border-white/20 bg-white/10 text-red-600 focus:ring-red-500"
+                  id="manual-all-day"
+                />
+                <label htmlFor="manual-all-day" className="text-sm text-white cursor-pointer select-none">All day</label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-white/70 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={manualEventForm.startDate}
+                    onChange={e => setManualEventForm({ ...manualEventForm, startDate: e.target.value })}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                  />
+                </div>
+                {!manualEventForm.isAllDay && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white/70 mb-2">Start Time</label>
+                    <input
+                      type="time"
+                      value={manualEventForm.startTime}
+                      onChange={e => setManualEventForm({ ...manualEventForm, startTime: e.target.value })}
+                      className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {manualEventForm.type === 'event' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-white/70 mb-2">End Date</label>
+                    <input
+                      type="date"
+                      value={manualEventForm.endDate}
+                      onChange={e => setManualEventForm({ ...manualEventForm, endDate: e.target.value })}
+                      className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                    />
+                  </div>
+                  {!manualEventForm.isAllDay && (
+                    <div>
+                      <label className="block text-xs font-semibold text-white/70 mb-2">End Time</label>
+                      <input
+                        type="time"
+                        value={manualEventForm.endTime}
+                        onChange={e => setManualEventForm({ ...manualEventForm, endTime: e.target.value })}
+                        className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Description (Optional)</label>
+                <textarea
+                  value={manualEventForm.description}
+                  onChange={e => setManualEventForm({ ...manualEventForm, description: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/40 transition-all resize-none"
+                  rows={2}
+                  placeholder="Notes..."
+                />
+              </div>
+
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowManualEventModal(false)}
+                className="flex-1 py-2.5 px-4 rounded-lg border border-white/20 text-white/70 hover:bg-white/10 transition-all text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveManualEvent}
+                disabled={!manualEventForm.title.trim()}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-red-500 to-rose-600 text-white hover:from-red-600 hover:to-rose-700 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Add
               </button>
             </div>
           </div>

@@ -107,6 +107,9 @@ export async function createCalendarEvent(
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
         // Use explicit timezone from client, not server's timezone
+        // Determine color based on event title (or use provided colorId)
+        const colorId = event.colorId || getColorIdFromTitle(event.title);
+
         const eventResource = {
             summary: event.title,
             description: event.description,
@@ -123,7 +126,7 @@ export async function createCalendarEvent(
             reminders: event.reminders || {
                 useDefault: true,
             },
-            colorId: event.colorId,
+            colorId, // Apply color based on event type
         };
 
         const response = await calendar.events.insert({
