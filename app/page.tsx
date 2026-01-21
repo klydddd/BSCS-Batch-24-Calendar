@@ -2577,11 +2577,12 @@ PEF3
           {/* Manage Tab Glass Container */}
           {activeTab === 'manage' && (
             <div
-              className={`animate-slide-up ${isMobileView ? 'fixed inset-0 top-14 z-40 bg-red-900/95' : 'glass-container'}`}
-              style={{ maxWidth: isMobileView ? '100%' : '900px', paddingTop: isMobileView ? '10px' : '80px' }}
+              className={`animate-slide-up ${isMobileView ? 'fixed inset-0 top-14 z-40 ' : 'glass-container'}`}
+              style={{ maxWidth: isMobileView ? '100%' : '100vw', padding: isMobileView ? '4px 0 20px 0' : ' 80px 0px 0px 0px ', height: isMobileView ? '100%' : '100vh' }}
             >
               {!session ? (
-                <div className={`${isMobileView ? 'mx-4 mt-8 bg-black/30 backdrop-blur-sm rounded-2xl p-8 border border-white/10 text-center' : 'glass-panel p-12 max-w-md mx-auto text-center'}`}>
+                <div
+                  className={`${isMobileView ? 'mx-4 mt-8 bg-black/30 backdrop-blur-sm rounded-2xl p-8 border border-white/10 text-center h-[80dvh] flex items-center justify-center flex-col' : 'h-screen w-screen glass-panel p-12 text-center flex items-center justify-center flex-col'}`}>
                   <svg className="w-14 h-14 mx-auto mb-5 text-white/50" fill="none" stroke="currentColor" strokeWidth="1" viewBox="0 0 24 24">
                     <rect x="5" y="11" width="14" height="10" rx="2" />
                     <path d="M7 11V7a5 5 0 1110 0v4" />
@@ -2593,7 +2594,10 @@ PEF3
                   </button>
                 </div>
               ) : (
-                <div className={`w-full mx-auto ${isMobileView ? 'h-full p-4 pt-2 overflow-y-auto flex flex-col pb-20' : 'glass-panel p-5 w-full max-w-4xl'}`}>
+                <div
+                  className={`w-full ${isMobileView ? 'h-full p-4 pt-2 overflow-y-auto flex flex-col pb-20' : 'glass-panel p-5 w-full '}`}
+                  style={{ height: isMobileView ? '100%' : '100vh', background: '#410a0a', borderRadius: '00px' }}
+                >
                   {/* Header with search, view toggle, and refresh */}
                   <div className="mb-4">
                     {/* Calendar Navigation for calendar view - full width on mobile */}
@@ -2804,7 +2808,10 @@ PEF3
                       </div>
 
                       {/* Calendar grid - flex-1 to fill remaining height */}
-                      <div className={`grid grid-cols-7 gap-1 ${isMobileView ? 'flex-1' : ''}`} style={isMobileView ? { gridAutoRows: '1fr' } : undefined}>
+                      <div
+                        className={`grid grid-cols-7 gap-1 ${isMobileView ? 'flex-1' : ''}`}
+                        style={isMobileView ? { gridAutoRows: '1fr' } : { height: '66vh' }}
+                      >
                         {getCalendarDays(currentMonth).map((date, index) => (
                           <div
                             key={index}
@@ -2848,9 +2855,9 @@ PEF3
                       </div>
 
                       {/* Event count */}
-                      <p className="text-center text-white/40 text-xs mt-4">
+                      {/* <p className="text-center text-white/40 text-xs mt-4">
                         {calendarEvents.length} event{calendarEvents.length !== 1 ? 's' : ''} total
-                      </p>
+                      </p> */}
                     </div>
                   )}
                 </div>
@@ -4734,7 +4741,7 @@ PEF3
       )}
 
       {/* Footer with Privacy & Terms Links */}
-      <footer className="fixed bottom-0 left-0 right-0 z-40 px-6 py-3 bg-linear-to-t from-red-900/80 to-transparent pointer-events-none">
+      <footer className="fixed bottom-0 left-0 right-0 z-40 px-6 py-3 bg-linear-to-t pointer-events-none">
         <div className="max-w-7xl mx-auto flex items-center justify-center gap-4 pointer-events-auto">
           <Link
             href="/privacy"

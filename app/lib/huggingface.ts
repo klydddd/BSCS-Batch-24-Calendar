@@ -17,10 +17,16 @@ const SCHEDULE_PROMPT = `You are a schedule parser. Analyze this image of a clas
 The table typically has columns like: SUBJECT CODE, SUBJECT NAME, SCHEDULE, SECTION & ROOM #, UNITS, FACULTY ASSIGNED.
 
 Extract ONLY the following information for each class row:
+<<<<<<< Updated upstream
 1. subjectCode: The course code (e.g., "CMSC 128", "ALC01", "CCS05", "OPS01")
 2. subjectName: The subject title/name (e.g., "Software Engineering", "Operating Systems")
 3. schedule: Parse the SCHEDULE column which contains day codes and times.
 4. room: The entire text from the "SECTION & ROOM #" or "ROOM" column (e.g., "BSCS-2-A/TBA", "EA-611(lab)")
+=======
+1. subjectCode: The course code (e.g., "ALC01", "CCS05", "ETHICS", "OPS01")
+2. schedule: Parse the SCHEDULE column which contains day codes and times.
+3. room: The entire text from the "SECTION & ROOM #" column (e.g., "BSCS-1A / 501", "BSCS-1B / LAB1").
+>>>>>>> Stashed changes
 
 CRITICAL - DAY CODE PARSING RULES:
 - "T" alone = Tuesday (NOT Thursday)
@@ -67,9 +73,13 @@ IMPORTANT:
 - When you see just "T" without H, it is Tuesday
 - Return ONLY the JSON array, no markdown, no explanation.
 - Ignore header rows and total rows.
+<<<<<<< Updated upstream
 - ALWAYS extract both subjectCode and subjectName if they are in separate columns.
 - If only one column exists for subject, use it for subjectCode and leave subjectName empty.`
 
+=======
+- If the Subject Code is not found, use the course name instead.`;
+>>>>>>> Stashed changes
 
 /**
  * Parse a schedule image using Hugging Face's vision-language model
@@ -93,7 +103,7 @@ export async function parseScheduleImage(
         // Use Qwen2-VL for vision-language understanding
         // This model is good at OCR and structured data extraction
         const response = await hf.chatCompletion({
-            model: 'Qwen/Qwen2.5-VL-72B-Instruct',
+            model: 'Qwen/Qwen2-VL-7B-Instruct',
             messages: [
                 {
                     role: 'user',
