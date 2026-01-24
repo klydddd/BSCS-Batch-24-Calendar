@@ -116,6 +116,20 @@ export default function Home() {
     isAllDay: false
   });
 
+  // Edit parsed item modal state (for editing before sending)
+  const [editingParsedIndex, setEditingParsedIndex] = useState<number | null>(null);
+  const [showEditParsedModal, setShowEditParsedModal] = useState(false);
+  const [editParsedForm, setEditParsedForm] = useState({
+    title: '',
+    description: '',
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    isAllDay: false,
+    type: 'event' as 'event' | 'task'
+  });
+
   const handleManualAddEvent = () => {
     setShowManualEventModal(true);
     setManualEventForm({
@@ -1129,6 +1143,104 @@ export default function Home() {
       else if (i > index) newSelected.add(i - 1);
     });
     setSelectedItems(newSelected);
+  };
+
+  // Open edit modal for a parsed item
+  const openEditParsedModal = (index: number) => {
+    const item = parsedItems[index];
+    if (!item) return;
+
+    let startDate = '';
+    let startTime = '';
+    let endDate = '';
+    let endTime = '';
+    let isAllDay = false;
+
+    if (item.type === 'event') {
+      const event = item as CalendarEvent;
+      // Check if it's an all-day event (no 'T' in datetime or isAllDay flag)
+      isAllDay = event.isAllDay || !event.startDateTime.includes('T');
+
+      if (isAllDay) {
+        startDate = event.startDateTime.split('T')[0];
+        endDate = event.endDateTime.split('T')[0];
+        startTime = '08:00';
+        endTime = '09:00';
+      } else {
+        // Parse datetime like "2026-02-06T14:00:00"
+        const startParts = event.startDateTime.split('T');
+        startDate = startParts[0];
+        startTime = startParts[1]?.substring(0, 5) || '08:00';
+
+        const endParts = event.endDateTime.split('T');
+        endDate = endParts[0];
+        endTime = endParts[1]?.substring(0, 5) || '09:00';
+      }
+    } else {
+      const task = item as CalendarTask;
+      isAllDay = true;
+      startDate = task.dueDate.split('T')[0];
+      endDate = startDate;
+      startTime = '08:00';
+      endTime = '09:00';
+    }
+
+    setEditingParsedIndex(index);
+    setEditParsedForm({
+      title: item.title,
+      description: item.description || '',
+      startDate,
+      startTime,
+      endDate,
+      endTime,
+      isAllDay,
+      type: item.type
+    });
+    setShowEditParsedModal(true);
+  };
+
+  // Save edited parsed item
+  const saveEditedParsedItem = () => {
+    if (editingParsedIndex === null || !editParsedForm.title.trim()) return;
+
+    let updatedItem: CalendarItem;
+
+    if (editParsedForm.type === 'event') {
+      updatedItem = {
+        type: 'event',
+        title: editParsedForm.title,
+        description: editParsedForm.description || undefined,
+        startDateTime: editParsedForm.isAllDay
+          ? editParsedForm.startDate
+          : `${editParsedForm.startDate}T${editParsedForm.startTime}:00`,
+        endDateTime: editParsedForm.isAllDay
+          ? editParsedForm.endDate
+          : `${editParsedForm.endDate}T${editParsedForm.endTime}:00`,
+        isAllDay: editParsedForm.isAllDay,
+      };
+    } else {
+      updatedItem = {
+        type: 'task',
+        title: editParsedForm.title,
+        description: editParsedForm.description || undefined,
+        dueDate: editParsedForm.isAllDay
+          ? editParsedForm.startDate
+          : `${editParsedForm.startDate}T${editParsedForm.startTime}:00`,
+      };
+    }
+
+    // Update the parsedItems array
+    setParsedItems(prev => prev.map((item, i) => i === editingParsedIndex ? updatedItem : item));
+
+    // Close modal
+    setShowEditParsedModal(false);
+    setEditingParsedIndex(null);
+  };
+
+  // Close edit parsed modal
+  const closeEditParsedModal = () => {
+    setShowEditParsedModal(false);
+    setEditingParsedIndex(null);
   };
 
   const formatDateTime = (dateTimeStr: string) => {
@@ -2587,6 +2699,7 @@ PEF3
                                   onClick={() => handleCreateSingleEvent(index)}
                                   disabled={!session || creatingIndex === index}
                                   className="p-2 text-white/50 hover:text-green-300 hover:bg-green-500/20 rounded-lg transition-all disabled:opacity-30"
+                                  title="Create event"
                                 >
                                   {creatingIndex === index ? (
                                     <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24">
@@ -2600,8 +2713,19 @@ PEF3
                                   )}
                                 </button>
                                 <button
+                                  onClick={() => openEditParsedModal(index)}
+                                  className="p-2 text-white/50 hover:text-blue-300 hover:bg-blue-500/20 rounded-lg transition-all"
+                                  title="Edit event"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                  </svg>
+                                </button>
+                                <button
                                   onClick={() => removeItem(index)}
                                   className="p-2 text-white/50 hover:text-red-300 hover:bg-red-500/20 rounded-lg transition-all"
+                                  title="Remove item"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                                     <path d="M6 18L18 6M6 6l12 12" />
@@ -4741,6 +4865,130 @@ PEF3
                 className="flex-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-red-500 to-rose-600 text-white hover:from-red-600 hover:to-rose-700 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Parsed Item Modal */}
+      {showEditParsedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-lg p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-bold text-white mb-6">Edit Event</h3>
+
+            <div className="space-y-4">
+              {/* Type Display (read-only) */}
+              <div className="flex bg-white/5 p-1 rounded-lg">
+                <div
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md text-center ${editParsedForm.type === 'event' ? 'bg-white/20 text-white' : 'text-white/50'}`}
+                >
+                  Event
+                </div>
+                <div
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md text-center ${editParsedForm.type === 'task' ? 'bg-white/20 text-white' : 'text-white/50'}`}
+                >
+                  Task
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Title</label>
+                <input
+                  type="text"
+                  value={editParsedForm.title}
+                  onChange={e => setEditParsedForm({ ...editParsedForm, title: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/40 transition-all"
+                  placeholder="Event title"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={editParsedForm.isAllDay}
+                  onChange={e => setEditParsedForm({ ...editParsedForm, isAllDay: e.target.checked })}
+                  className="rounded border-white/20 bg-white/10 text-red-600 focus:ring-red-500"
+                  id="edit-parsed-all-day"
+                />
+                <label htmlFor="edit-parsed-all-day" className="text-sm text-white cursor-pointer select-none">All day</label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-white/70 mb-2">Start Date</label>
+                  <input
+                    type="date"
+                    value={editParsedForm.startDate}
+                    onChange={e => setEditParsedForm({ ...editParsedForm, startDate: e.target.value })}
+                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                  />
+                </div>
+                {!editParsedForm.isAllDay && (
+                  <div>
+                    <label className="block text-xs font-semibold text-white/70 mb-2">Start Time</label>
+                    <input
+                      type="time"
+                      value={editParsedForm.startTime}
+                      onChange={e => setEditParsedForm({ ...editParsedForm, startTime: e.target.value })}
+                      className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {editParsedForm.type === 'event' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-white/70 mb-2">End Date</label>
+                    <input
+                      type="date"
+                      value={editParsedForm.endDate}
+                      onChange={e => setEditParsedForm({ ...editParsedForm, endDate: e.target.value })}
+                      className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                    />
+                  </div>
+                  {!editParsedForm.isAllDay && (
+                    <div>
+                      <label className="block text-xs font-semibold text-white/70 mb-2">End Time</label>
+                      <input
+                        type="time"
+                        value={editParsedForm.endTime}
+                        onChange={e => setEditParsedForm({ ...editParsedForm, endTime: e.target.value })}
+                        className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:border-white/40 [color-scheme:dark]"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-2">Description (Optional)</label>
+                <textarea
+                  value={editParsedForm.description}
+                  onChange={e => setEditParsedForm({ ...editParsedForm, description: e.target.value })}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/40 transition-all resize-none"
+                  rows={2}
+                  placeholder="Notes..."
+                />
+              </div>
+
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={closeEditParsedModal}
+                className="flex-1 py-2.5 px-4 rounded-lg border border-white/20 text-white/70 hover:bg-white/10 transition-all text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEditedParsedItem}
+                disabled={!editParsedForm.title.trim()}
+                className="flex-1 py-2.5 px-4 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:from-blue-600 hover:to-indigo-700 transition-all text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Save Changes
               </button>
             </div>
           </div>
