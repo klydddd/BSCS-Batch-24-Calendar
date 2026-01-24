@@ -59,19 +59,22 @@ export async function getUserEmail(accessToken: string): Promise<string> {
 }
 
 /**
- * Determine the Google Calendar color ID based on task/event title
+ * Determine the Google Calendar color ID and emoji prefix based on task/event title
  * Google Calendar Color IDs:
  * - 11 = Red (Tomato) - for Quizzes/Exams
  * - 5 = Yellow (Banana) - for Assignments/Homework
  * - 9 = Blue (Blueberry) - for Projects
  * - 10 = Green (Basil) - for Other Activities (default)
+ * 
+ * Note: colorId only affects the organizer's calendar view, not attendees.
+ * We add emoji prefixes so recipients can also identify event categories.
  */
-export function getColorIdFromTitle(title: string): string {
+export function getCategoryInfo(title: string): { colorId: string; emoji: string; category: string } {
     const lowerTitle = title.toLowerCase();
 
-    // Quiz patterns
+    // Quiz/Exam patterns
     if (lowerTitle.includes('quiz') || lowerTitle.includes('exam') || lowerTitle.includes('test')) {
-        return '11'; // Red
+        return { colorId: '11', emoji: '🔴', category: 'Quiz/Exam' };
     }
 
     // Assignment/Homework patterns
@@ -80,7 +83,7 @@ export function getColorIdFromTitle(title: string): string {
         lowerTitle.includes('hw') ||
         lowerTitle.includes('activity') ||
         lowerTitle.includes('exercise')) {
-        return '5'; // Yellow
+        return { colorId: '5', emoji: '🟡', category: 'Assignment' };
     }
 
     // Project patterns
@@ -88,10 +91,14 @@ export function getColorIdFromTitle(title: string): string {
         lowerTitle.includes('group project') ||
         lowerTitle.includes('final project') ||
         lowerTitle.includes('capstone')) {
-        return '9'; // Blue
+        return { colorId: '9', emoji: '🔵', category: 'Project' };
     }
 
-    return '10'; // Green - Default for other activities
+    return { colorId: '10', emoji: '🟢', category: 'Activity' };
+}
+
+export function getColorIdFromTitle(title: string): string {
+    return getCategoryInfo(title).colorId;
 }
 
 export async function createCalendarEvent(
@@ -106,13 +113,16 @@ export async function createCalendarEvent(
 
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-        // Use explicit timezone from client, not server's timezone
-        // Determine color based on event title (or use provided colorId)
-        const colorId = event.colorId || getColorIdFromTitle(event.title);
+        // Get category info (color and emoji) based on event title
+        const categoryInfo = getCategoryInfo(event.title);
+        const colorId = event.colorId || categoryInfo.colorId;
+
+        // Add emoji prefix to title so recipients can identify category (colorId only affects organizer's view)
+        const titleWithEmoji = `${categoryInfo.emoji} ${event.title}`;
 
         const eventResource = {
-            summary: event.title,
-            description: event.description,
+            summary: titleWithEmoji,
+            description: event.description ? `${event.description}\n\n📌 Category: ${categoryInfo.category}` : `📌 Category: ${categoryInfo.category}`,
             location: event.location,
             start: {
                 dateTime: event.startDateTime,
@@ -126,7 +136,7 @@ export async function createCalendarEvent(
             reminders: event.reminders || {
                 useDefault: true,
             },
-            colorId, // Apply color based on event type
+            colorId, // Apply color based on event type (organizer only)
         };
 
         const response = await calendar.events.insert({
@@ -161,8 +171,12 @@ export async function createCalendarTask(
 
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-        // Determine color based on task title (or use provided colorId)
-        const colorId = task.colorId || getColorIdFromTitle(task.title);
+        // Get category info (color and emoji) based on task title
+        const categoryInfo = getCategoryInfo(task.title);
+        const colorId = task.colorId || categoryInfo.colorId;
+
+        // Add emoji prefix to task title so recipients can identify category
+        const titleWithEmoji = `${categoryInfo.emoji} 📋 ${task.title}`;
 
         // Tasks are created as all-day events in Google Calendar
         // Include attendees so they receive invitations
@@ -175,8 +189,8 @@ export async function createCalendarTask(
             attendees?: { email: string }[];
             colorId: string;
         } = {
-            summary: `📋 ${task.title}`,
-            description: `${task.description || ''}\n\nPriority: ${task.priority || 'medium'}`,
+            summary: titleWithEmoji,
+            description: `${task.description || ''}\n\n📌 Category: ${categoryInfo.category}\nPriority: ${task.priority || 'medium'}`,
             start: {
                 date: task.dueDate.split('T')[0],
             },
@@ -184,7 +198,7 @@ export async function createCalendarTask(
                 date: task.dueDate.split('T')[0],
             },
             transparency: 'transparent', // Doesn't block time
-            colorId, // Always apply color based on task type
+            colorId, // Apply color based on task type (organizer only)
         };
 
         // Add attendees if provided

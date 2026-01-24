@@ -88,6 +88,7 @@ export default function Home() {
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [showReauthPopup, setShowReauthPopup] = useState(false);
   const [eventSearchQuery, setEventSearchQuery] = useState('');
+  const [silentMode, setSilentMode] = useState(false); // Silent mode - skip notifications when creating/updating/deleting
 
   // Edit modal state
   const [editingEvent, setEditingEvent] = useState<CalendarEventItem | null>(null);
@@ -368,15 +369,15 @@ export default function Home() {
     setDeletingEventId(eventId);
     setError(null);
     try {
-      // Delete WITHOUT automatic notifications
+      // Delete with notifications based on silentMode
       const response = await fetch(
-        `/api/calendar/events/${eventId}?access_token=${encodeURIComponent(session.accessToken)}&send_notifications=false`,
+        `/api/calendar/events/${eventId}?access_token=${encodeURIComponent(session.accessToken)}&send_notifications=${silentMode ? 'false' : 'true'}`,
         { method: 'DELETE' }
       );
       const result = await response.json();
       if (result.success) {
-        // Send cancellation email if there are attendees
-        if (eventToDelete && eventToDelete.attendees.length > 0) {
+        // Send cancellation email if there are attendees and NOT in silent mode
+        if (!silentMode && eventToDelete && eventToDelete.attendees.length > 0) {
           const attendeesList = eventToDelete.attendees.filter(email => email !== session.email);
           if (attendeesList.length > 0) {
             try {
@@ -402,7 +403,7 @@ export default function Home() {
         }
 
         setCalendarEvents(calendarEvents.filter(e => e.id !== eventId));
-        const emailMsg = hasAttendees ? ' Cancellation email sent.' : '';
+        const emailMsg = (!silentMode && hasAttendees) ? ' Cancellation email sent.' : (silentMode ? ' (Silent mode)' : '');
         setSuccess(`Deleted "${eventTitle}" successfully!${emailMsg}`);
       } else {
         setError(result.error || 'Failed to delete event');
@@ -436,7 +437,8 @@ export default function Home() {
 
     for (const event of calendarEvents) {
       try {
-        // Delete WITHOUT sending individual notifications
+        // ALWAYS suppress individual Google Calendar notifications during bulk delete
+        // We'll send ONE summary email at the end to avoid redundant notifications
         const response = await fetch(
           `/api/calendar/events/${event.id}?access_token=${encodeURIComponent(session.accessToken)}&send_notifications=false`,
           { method: 'DELETE' }
@@ -462,9 +464,9 @@ export default function Home() {
       }
     }
 
-    // Send ONE cancellation summary email if there are attendees
+    // Send ONE cancellation summary email if there are attendees and NOT in silent mode
     const attendeesList = Array.from(allAttendees).filter(email => email !== session.email);
-    if (attendeesList.length > 0 && deletedEventInfos.length > 0) {
+    if (!silentMode && attendeesList.length > 0 && deletedEventInfos.length > 0) {
       try {
         await fetch('/api/email', {
           method: 'POST',
@@ -487,9 +489,9 @@ export default function Home() {
     await loadCalendarEvents();
 
     if (successCount > 0) {
-      const emailSentMsg = attendeesList.length > 0 && deletedEventInfos.length > 0
+      const emailSentMsg = (!silentMode && attendeesList.length > 0 && deletedEventInfos.length > 0)
         ? ' Cancellation email sent!'
-        : '';
+        : (silentMode ? ' (Silent mode)' : '');
       setSuccess(
         `Deleted ${successCount} event${successCount !== 1 ? 's' : ''} successfully!${failCount > 0 ? ` (${failCount} failed)` : ''}${emailSentMsg}`
       );
@@ -580,7 +582,7 @@ export default function Home() {
           accessToken: session.accessToken,
           updateData,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          sendNotifications: true,
+          sendNotifications: !silentMode,
         }),
       });
 
@@ -927,7 +929,7 @@ export default function Home() {
       (item as CalendarEvent).attendees = [...(item.attendees || []), ...activeRecipients];
     }
     try {
-      // Create event WITHOUT sending notifications (we'll send summary email instead)
+      // Create event with notifications based on silentMode
       const response = await fetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -936,14 +938,14 @@ export default function Home() {
           calendarItem: item,
           attendees: activeRecipients,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          sendNotifications: activeRecipients.length === 0 // Only auto-send if no recipients (for self)
+          sendNotifications: silentMode ? false : (activeRecipients.length === 0) // In silent mode, never auto-send
         }),
       });
       const result: CalendarCreateResponse = await response.json();
       if (result.success) {
-        // If there are recipients, send a summary email
+        // If there are recipients and NOT in silent mode, send a summary email
         let emailSent = false;
-        if (activeRecipients.length > 0) {
+        if (!silentMode && activeRecipients.length > 0) {
           const eventInfo = {
             title: item.title,
             date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
@@ -986,7 +988,8 @@ export default function Home() {
           else if (i > index) newSelected.add(i - 1);
         });
         setSelectedItems(newSelected);
-        setSuccess(`Created "${parsedItems[index].title}" successfully!${emailSent ? ' Summary email sent.' : (activeRecipients.length > 0 ? ' (Email failed)' : '')}`);
+        const silentMsg = silentMode ? ' (Silent mode)' : '';
+        setSuccess(`Created "${parsedItems[index].title}" successfully!${emailSent ? ' Summary email sent.' : ((!silentMode && activeRecipients.length > 0) ? ' (Email failed)' : '')}${silentMsg}`);
       } else {
         setError(result.error || 'Failed to create event');
       }
@@ -1020,7 +1023,7 @@ export default function Home() {
         (item as CalendarEvent).attendees = [...(item.attendees || []), ...activeRecipients];
       }
       try {
-        // Create event WITHOUT sending notifications
+        // Create event with notifications based on silentMode
         const response = await fetch('/api/calendar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1029,7 +1032,7 @@ export default function Home() {
             calendarItem: item,
             attendees: activeRecipients,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            sendNotifications: activeRecipients.length === 0 // Only auto-send if no recipients
+            sendNotifications: silentMode ? false : (activeRecipients.length === 0)
           }),
         });
         const result: CalendarCreateResponse = await response.json();
@@ -1037,8 +1040,8 @@ export default function Home() {
           successCount++;
           createdIndices.push(index);
 
-          // Collect event info for summary email
-          if (activeRecipients.length > 0) {
+          // Collect event info for summary email (only if not in silent mode)
+          if (!silentMode && activeRecipients.length > 0) {
             createdEventInfos.push({
               title: item.title,
               date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
@@ -1055,9 +1058,9 @@ export default function Home() {
       }
     }
 
-    // Send ONE summary email with all created events
+    // Send ONE summary email with all created events (only if not in silent mode)
     let emailSent = false;
-    if (activeRecipients.length > 0 && createdEventInfos.length > 0) {
+    if (!silentMode && activeRecipients.length > 0 && createdEventInfos.length > 0) {
       console.log('Sending summary email for multiple events:', { eventCount: createdEventInfos.length, recipients: activeRecipients, senderEmail: session.email });
       try {
         const emailResponse = await fetch('/api/email', {
@@ -1086,8 +1089,9 @@ export default function Home() {
     setParsedItems(newItems);
     setSelectedItems(new Set());
     if (successCount > 0) {
-      const emailSentMsg = emailSent ? ' Summary email sent!' : (activeRecipients.length > 0 && createdEventInfos.length > 0 ? ' (Email failed)' : '');
-      setSuccess(`Created ${successCount} item${successCount > 1 ? 's' : ''}!${failCount > 0 ? ` (${failCount} failed)` : ''}${emailSentMsg}`);
+      const silentMsg = silentMode ? ' (Silent mode)' : '';
+      const emailSentMsg = emailSent ? ' Summary email sent!' : ((!silentMode && activeRecipients.length > 0 && createdEventInfos.length > 0) ? ' (Email failed)' : '');
+      setSuccess(`Created ${successCount} item${successCount > 1 ? 's' : ''}!${failCount > 0 ? ` (${failCount} failed)` : ''}${emailSentMsg}${silentMsg}`);
     }
     if (failCount > 0 && successCount === 0) setError(`Failed to create ${failCount} item${failCount > 1 ? 's' : ''}.`);
     if (newItems.length === 0) setInput('');
@@ -2117,7 +2121,26 @@ export default function Home() {
 
         <div className="max-w-7xl mx-auto flex items-center justify-between sm:relative">
           {/* Logo - Left (hidden on mobile) */}
-          <span className="font-bold text-base tracking-tight text-white hidden sm:block sm:flex-shrink-0">BSCS Calendar</span>
+          <div className="hidden sm:flex items-center gap-3">
+            <span className="font-bold text-base tracking-tight text-white">BSCS Calendar</span>
+            {/* Silent Mode Icon Button */}
+            <button
+              onClick={() => setSilentMode(!silentMode)}
+              className={`p-2 rounded-full transition-all ${silentMode ? 'bg-amber-500/30 border border-amber-400/50' : 'bg-white/10 border border-white/20 hover:bg-white/20'}`}
+              title={silentMode ? 'Silent Mode ON - No notifications will be sent' : 'Silent Mode OFF - Notifications will be sent'}
+            >
+              {silentMode ? (
+                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                  <path d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+              )}
+            </button>
+          </div>
 
           {/* Tab Navigation - Centered on desktop, flex on mobile */}
           <div className="flex items-center gap-2 sm:gap-8 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
@@ -2143,6 +2166,23 @@ export default function Home() {
 
           {/* Auth - Right */}
           <div className="flex items-center gap-2 sm:gap-6 flex-shrink-0">
+            {/* Silent Mode Icon Button - Mobile version */}
+            <button
+              onClick={() => setSilentMode(!silentMode)}
+              className={`sm:hidden p-2 rounded-full transition-all ${silentMode ? 'bg-amber-500/30 border border-amber-400/50' : 'bg-white/10 border border-white/20'}`}
+              title={silentMode ? 'Silent Mode ON' : 'Silent Mode OFF'}
+            >
+              {silentMode ? (
+                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                  <path d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4 text-white/60" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                </svg>
+              )}
+            </button>
             {session ? (
               <>
                 <span className="text-sm text-white/60 hidden sm:block">{session.email}</span>
@@ -2396,7 +2436,8 @@ PEF3
                             {input.length > 0 && `${input.split('\n').filter(l => l.trim()).length} lines`}
                           </span>
                           <div className="flex gap-2">
-                            <button
+                            {/* add event button */}
+                            {/* <button
                               type="button"
                               onClick={handleManualAddEvent}
                               className="px-4 py-2 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition-all text-sm font-medium flex items-center gap-2"
@@ -2406,7 +2447,7 @@ PEF3
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                               </svg>
                               Add events
-                            </button>
+                            </button> */}
                             <button type="submit" disabled={isParsing || !input.trim()} className="btn-glass">
                               {isParsing ? (
                                 <span className="flex items-center gap-2">
@@ -2734,7 +2775,7 @@ PEF3
                           <p className="text-white/50 text-sm">{eventSearchQuery ? 'No events found.' : 'No upcoming events.'}</p>
                         </div>
                       ) : (
-                        <div className={`space-y-2 ${isMobileView ? 'overflow-y-auto flex-1' : 'max-h-[350px] overflow-y-auto'}`}>
+                        <div className={`space-y-2 ${isMobileView ? 'overflow-y-auto flex-1' : 'max-h-[80vh] overflow-y-auto'}`}>
                           {filteredEvents.map((event) => (
                             <div key={event.id} className="event-card-glass">
                               <div className="flex items-start gap-4">
