@@ -7,6 +7,7 @@ import { Analytics } from '@vercel/analytics/next';
 import html2canvas from 'html2canvas';
 import Tesseract from 'tesseract.js';
 import Link from 'next/link';
+import ProductTour from './components/ProductTour';
 
 interface UserSession {
   email: string;
@@ -2125,6 +2126,7 @@ export default function Home() {
             <span className="font-bold text-base tracking-tight text-white">BSCS Calendar</span>
             {/* Silent Mode Icon Button */}
             <button
+              id="silent-mode-btn"
               onClick={() => setSilentMode(!silentMode)}
               className={`p-2 rounded-full transition-all ${silentMode ? 'bg-amber-500/30 border border-amber-400/50' : 'bg-white/10 border border-white/20 hover:bg-white/20'}`}
               title={silentMode ? 'Silent Mode ON - No notifications will be sent' : 'Silent Mode OFF - Notifications will be sent'}
@@ -2143,7 +2145,7 @@ export default function Home() {
           </div>
 
           {/* Tab Navigation - Centered on desktop, flex on mobile */}
-          <div className="flex items-center gap-2 sm:gap-8 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
+          <div id="nav-tabs" className="flex items-center gap-2 sm:gap-8 sm:absolute sm:left-1/2 sm:-translate-x-1/2">
             <button
               onClick={() => setActiveTab('create')}
               className={`tab-link-hero text-[10px] sm:text-sm whitespace-nowrap ${activeTab === 'create' ? 'tab-link-hero-active' : ''}`}
@@ -2157,6 +2159,7 @@ export default function Home() {
               Manage
             </button>
             <button
+              id="schedule-tab-btn"
               onClick={() => setActiveTab('schedule')}
               className={`tab-link-hero text-[10px] sm:text-sm whitespace-nowrap ${activeTab === 'schedule' ? 'tab-link-hero-active' : ''}`}
             >
@@ -2268,7 +2271,7 @@ export default function Home() {
                 {/* Left Column - Recipients + To-Do List (stacked vertically) */}
                 <div className={`flex flex-col gap-5 ${parsedItems.length > 0 ? 'lg:w-1/2' : 'w-full lg:flex-row'} transition-all`}>
                   {/* Recipients Panel */}
-                  <div className={`w-full ${parsedItems.length > 0 ? '' : 'lg:w-72'} shrink-0`}>
+                  <div id="recipients-panel" className={`w-full ${parsedItems.length > 0 ? '' : 'lg:w-72'} shrink-0`}>
                     <div className="glass-panel p-5 h-full">
                       <div className="flex items-center gap-3 mb-5">
                         <svg className="w-5 h-5 text-white/80" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
@@ -2419,6 +2422,7 @@ export default function Home() {
                           <h3 className="font-semibold text-white text-sm">To-Do List</h3>
                         </div>
                         <textarea
+                          id="todo-input"
                           value={input}
                           onChange={(e) => setInput(e.target.value)}
                           placeholder="Paste your to-do list here...
@@ -2448,7 +2452,7 @@ PEF3
                               </svg>
                               Add events
                             </button> */}
-                            <button type="submit" disabled={isParsing || !input.trim()} className="btn-glass">
+                            <button id="generate-btn" type="submit" disabled={isParsing || !input.trim()} className="btn-glass">
                               {isParsing ? (
                                 <span className="flex items-center gap-2">
                                   <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
@@ -4799,6 +4803,9 @@ PEF3
           </Link>
         </div>
       </footer>
+
+      {/* Interactive Product Tour for New Users */}
+      <ProductTour onTabChange={(tab) => setActiveTab(tab)} />
 
       <Analytics />
     </div >
