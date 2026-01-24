@@ -4,8 +4,8 @@ export interface CalendarEvent {
     type: 'event';
     title: string;
     description?: string;
-    startDateTime: string; // ISO 8601 format
-    endDateTime: string;   // ISO 8601 format
+    startDateTime: string; // ISO 8601 format (date-only for all-day events, e.g., "2025-12-15")
+    endDateTime: string;   // ISO 8601 format (date-only for all-day events, e.g., "2025-12-15")
     location?: string;
     reminders?: {
         useDefault: boolean;
@@ -13,6 +13,7 @@ export interface CalendarEvent {
     };
     attendees?: string[];
     colorId?: string;
+    isAllDay?: boolean; // If true, startDateTime and endDateTime are dates only (no time)
 }
 
 export interface CalendarTask {

@@ -120,18 +120,48 @@ export async function createCalendarEvent(
         // Add emoji prefix to title so recipients can identify category (colorId only affects organizer's view)
         const titleWithEmoji = `${categoryInfo.emoji} ${event.title}`;
 
+        // Determine if this is an all-day event
+        // An event is all-day if: isAllDay flag is true, OR if startDateTime doesn't contain 'T' (date-only format)
+        const isAllDay = event.isAllDay || !event.startDateTime.includes('T');
+
+        // Build start/end properties based on whether it's an all-day event
+        let startProperty: { date?: string; dateTime?: string; timeZone?: string };
+        let endProperty: { date?: string; dateTime?: string; timeZone?: string };
+
+        if (isAllDay) {
+            // For all-day events, use 'date' property (YYYY-MM-DD format)
+            // Extract just the date part if it contains a time component
+            const startDate = event.startDateTime.split('T')[0];
+            const endDateRaw = event.endDateTime.split('T')[0];
+
+            // IMPORTANT: Google Calendar's end date for all-day events is EXCLUSIVE
+            // This means to show an event on a day, the end date must be the NEXT day
+            // Example: "Feb 06-07" means start=2026-02-06, end should be 2026-02-08 (to include Feb 7)
+            // Example: Single day "Feb 06" means start=2026-02-06, end should be 2026-02-07
+            const endDateObj = new Date(endDateRaw);
+            endDateObj.setDate(endDateObj.getDate() + 1);
+            const endDate = endDateObj.toISOString().split('T')[0];
+
+            startProperty = { date: startDate };
+            endProperty = { date: endDate };
+        } else {
+            // For timed events, use 'dateTime' property
+            startProperty = {
+                dateTime: event.startDateTime,
+                timeZone: timezone,
+            };
+            endProperty = {
+                dateTime: event.endDateTime,
+                timeZone: timezone,
+            };
+        }
+
         const eventResource = {
             summary: titleWithEmoji,
             description: event.description ? `${event.description}\n\n📌 Category: ${categoryInfo.category}` : `📌 Category: ${categoryInfo.category}`,
             location: event.location,
-            start: {
-                dateTime: event.startDateTime,
-                timeZone: timezone,
-            },
-            end: {
-                dateTime: event.endDateTime,
-                timeZone: timezone,
-            },
+            start: startProperty,
+            end: endProperty,
             attendees: event.attendees?.map(email => ({ email })),
             reminders: event.reminders || {
                 useDefault: true,

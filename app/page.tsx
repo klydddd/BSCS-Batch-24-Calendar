@@ -958,14 +958,19 @@ export default function Home() {
         // If there are recipients and NOT in silent mode, send a summary email
         let emailSent = false;
         if (!silentMode && activeRecipients.length > 0) {
+          // Determine if this is an all-day event
+          // Check: type is task, OR isAllDay flag is true, OR startDateTime is date-only (no 'T')
+          const eventIsAllDay = item.type === 'task' ||
+            (item.type === 'event' && ((item as CalendarEvent).isAllDay || !(item as CalendarEvent).startDateTime.includes('T')));
+
           const eventInfo = {
             title: item.title,
             date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
-            time: item.type === 'event'
+            time: (!eventIsAllDay && item.type === 'event')
               ? new Date((item as CalendarEvent).startDateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
               : undefined,
             link: result.eventLink,
-            isAllDay: item.type === 'task'
+            isAllDay: eventIsAllDay
           };
 
           console.log('Sending summary email for single event:', { eventInfo, recipients: activeRecipients, senderEmail: session.email });
@@ -1054,14 +1059,19 @@ export default function Home() {
 
           // Collect event info for summary email (only if not in silent mode)
           if (!silentMode && activeRecipients.length > 0) {
+            // Determine if this is an all-day event
+            // Check: type is task, OR isAllDay flag is true, OR startDateTime is date-only (no 'T')
+            const eventIsAllDay = item.type === 'task' ||
+              (item.type === 'event' && ((item as CalendarEvent).isAllDay || !(item as CalendarEvent).startDateTime.includes('T')));
+
             createdEventInfos.push({
               title: item.title,
               date: item.type === 'task' ? (item as CalendarTask).dueDate : (item as CalendarEvent).startDateTime,
-              time: item.type === 'event'
+              time: (!eventIsAllDay && item.type === 'event')
                 ? new Date((item as CalendarEvent).startDateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
                 : undefined,
               link: result.eventLink,
-              isAllDay: item.type === 'task'
+              isAllDay: eventIsAllDay
             });
           }
         } else failCount++;
