@@ -262,6 +262,17 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Live clock state
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update clock every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   useEffect(() => {
@@ -2436,9 +2447,15 @@ PEF3
                           disabled={isParsing}
                         />
                         <div className="flex justify-between items-center mt-4">
-                          <span className="text-xs text-white/60">
-                            {input.length > 0 && `${input.split('\n').filter(l => l.trim()).length} lines`}
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs text-white/60">
+                              {input.length > 0 && `${input.split('\n').filter(l => l.trim()).length} lines`}
+                            </span>
+                            {/* Live Date & Time */}
+                            <span className="text-xs text-white/80 font-medium">
+                              {currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} • {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                          </div>
                           <div className="flex gap-2">
                             {/* add event button */}
                             {/* <button
