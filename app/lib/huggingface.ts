@@ -37,6 +37,7 @@ COMBINED DAY CODES - Parse carefully:
 - "MW" = Monday AND Wednesday
 - "MWF" = Monday, Wednesday, AND Friday
 - "TF" = Tuesday AND Friday
+- "THF" = Thursday AND Friday
 
 For each schedule entry, create SEPARATE JSON objects for EACH day.
 

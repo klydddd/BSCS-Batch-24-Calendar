@@ -225,7 +225,7 @@ export default function Home() {
   const [showTimeLabels, setShowTimeLabels] = useState(true);
   const [showFooter, setShowFooter] = useState(true);
   const [showRoomInfo, setShowRoomInfo] = useState(true);
-  const [watermarkText, setWatermarkText] = useState('BSCS CALENDAR');
+  const [watermarkText, setWatermarkText] = useState('KLASE');
   const [visibleDays, setVisibleDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
   const [hideEmptyCells, setHideEmptyCells] = useState(false);
   const [autoFitTime, setAutoFitTime] = useState(false); // Hide excess time rows outside schedule range
@@ -2256,7 +2256,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto flex items-center justify-between sm:relative">
           {/* Logo - Left (hidden on mobile) */}
           <div className="hidden sm:flex items-center gap-3">
-            <span className="font-bold text-base tracking-tight text-white">BSCS Calendar</span>
+            <span className="font-bold text-base tracking-tight text-white">Klase</span>
             {/* Silent Mode Icon Button */}
             <button
               id="silent-mode-btn"
@@ -2389,11 +2389,8 @@ export default function Home() {
           ></Snowfall> */}
           {/* Massive Title - At bottom */}
           <div className="hero-title-container">
-            <p className="hero-subtitle mb-4">
-              BSCS Batch 2028 Exclusive Calendar Automation
-            </p>
             <h1 className="hero-title">
-              BSCS CALENDAR
+              KLASE
             </h1>
           </div>
 
@@ -4164,7 +4161,7 @@ PEF3
                     type="text"
                     value={watermarkText}
                     onChange={(e) => setWatermarkText(e.target.value)}
-                    placeholder="BSCS CALENDAR"
+                    placeholder="KLASE"
                     className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/40 transition-all"
                   />
                   <p className="text-[10px] text-white/40 mt-1">Leave empty to hide watermark</p>

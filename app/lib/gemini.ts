@@ -60,7 +60,7 @@ Example output:
 
 export async function parseInputWithAI(input: string, timezone?: string): Promise<AIParseResponse> {
     try {
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' });
 
         // Use client timezone or default to Asia/Hong_Kong (UTC+8)
         const tz = timezone || 'Asia/Hong_Kong';

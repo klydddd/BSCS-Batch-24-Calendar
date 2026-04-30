@@ -534,7 +534,7 @@ export async function sendSummaryEmail(
             
             <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
                 <p style="color: #6b7280; font-size: 13px; margin: 0; text-align: center;">
-                    This email was sent via BSCS Calendar Automation
+                    This email was sent via Klase
                 </p>
             </div>
         </div>
@@ -690,7 +690,7 @@ export async function sendCancellationEmail(
             
             <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #fecaca;">
                 <p style="color: #6b7280; font-size: 13px; margin: 0; text-align: center;">
-                    This email was sent via BSCS Calendar Automation
+                    This email was sent via Klase
                 </p>
             </div>
         </div>

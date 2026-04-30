@@ -52,7 +52,7 @@ export default function PrivacyPolicy() {
                                 1. Information We Collect
                             </h2>
                             <p style={{ color: "rgba(255, 255, 255, 0.8)" }}>
-                                When you use BSCS Calendar, we may collect the following information:
+                                When you use Klase, we may collect the following information:
                             </p>
                             <ul style={{
                                 marginTop: "0.5rem",

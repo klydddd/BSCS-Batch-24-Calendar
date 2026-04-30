@@ -55,8 +55,8 @@ const TUTORIAL_STEPS: TutorialStep[] = [
     },
 ];
 
-const STORAGE_KEY = 'bscs_tutorial_completed';
-const FIRST_VISIT_KEY = 'bscs_first_visit';
+const STORAGE_KEY = 'klase_tutorial_completed';
+const FIRST_VISIT_KEY = 'klase_first_visit';
 
 interface ProductTourProps {
     onTabChange?: (tab: 'create' | 'manage' | 'schedule') => void;
@@ -228,7 +228,7 @@ export default function ProductTour({ onTabChange }: ProductTourProps) {
                         </div>
 
                         <h2 className="text-2xl font-bold text-white mb-3">
-                            Welcome to BSCS Calendar! 🎓
+                            Welcome to Klase! 🎓
                         </h2>
 
                         <p className="text-white/70 mb-8">

@@ -52,7 +52,7 @@ export default function TermsOfService() {
                                 1. Acceptance of Terms
                             </h2>
                             <p style={{ color: "rgba(255, 255, 255, 0.8)" }}>
-                                By accessing and using BSCS Calendar (&quot;the Service&quot;), you agree to be bound
+                                By accessing and using Klase (&quot;the Service&quot;), you agree to be bound
                                 by these Terms of Service. If you do not agree to these terms, please do not
                                 use the Service.
                             </p>
@@ -68,8 +68,8 @@ export default function TermsOfService() {
                                 2. Description of Service
                             </h2>
                             <p style={{ color: "rgba(255, 255, 255, 0.8)" }}>
-                                BSCS Calendar is a calendar automation tool designed specifically for but not limited to BSCS
-                                Batch 2028 students. The Service allows users to:
+                                Klase is a calendar automation tool designed for students.
+                                The Service allows users to:
                             </p>
                             <ul style={{
                                 marginTop: "0.5rem",
@@ -158,7 +158,7 @@ export default function TermsOfService() {
                                 6. Intellectual Property
                             </h2>
                             <p style={{ color: "rgba(255, 255, 255, 0.8)" }}>
-                                All content, design, and code associated with BSCS Calendar are protected
+                                All content, design, and code associated with Klase are protected
                                 by intellectual property rights. You may not copy, modify, or distribute
                                 any part of the Service without explicit permission.
                             </p>

@@ -1,6 +1,6 @@
-# BSCS Calendar Automation
+# Klase
 
-AI-powered calendar automation for BSCS Batch 2028. Parse to-do lists into Google Calendar events and send invites automatically.
+AI-powered calendar automation for students. Parse to-do lists into Google Calendar events and send invites automatically.
 
 ## Features
 
